@@ -1,3 +1,5 @@
+import './globals.css'
+
 export const metadata = {
   title: 'PDL-MATCH',
   description: 'Padel Match Management System',
@@ -6,7 +8,10 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="id">
-      <body>{children}</body>
+      <head>
+        <script src="https://cdn.tailwindcss.com"></script>
+      </head>
+      <body className="bg-gray-950 text-gray-100 min-h-screen">{children}</body>
     </html>
   )
 }
