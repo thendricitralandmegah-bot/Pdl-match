@@ -456,6 +456,30 @@ export default function PDLUPEngineApp() {
         setErrorMessage(`Skor gagal disimpan: ${error.message}`);
         return;
       }
+      const team1Names = [match.team1.name1, match.team1.name2];
+      const team2Names = [match.team2.name1, match.team2.name2];
+      const { data: playerRows, error: playerRowsError } = await supabase
+        .from('players')
+        .select('id,name,matches_played,wins,points_for,points_against')
+        .eq('tournament_id', activeTournament.id)
+        .in('name', [...team1Names, ...team2Names]);
+      if (playerRowsError) {
+        setErrorMessage(`Skor tersimpan, tetapi statistik belum diperbarui: ${playerRowsError.message}`);
+      } else {
+        const statUpdates = (playerRows || []).map((player) => {
+          const isTeam1 = team1Names.includes(player.name);
+          const pointsFor = isTeam1 ? score1 : score2;
+          const pointsAgainst = isTeam1 ? score2 : score1;
+          const won = (isTeam1 && score1 > score2) || (!isTeam1 && score2 > score1);
+          return supabase.from('players').update({
+            matches_played: Number(player.matches_played || 0) + 1,
+            wins: Number(player.wins || 0) + (won ? 1 : 0),
+            points_for: Number(player.points_for || 0) + pointsFor,
+            points_against: Number(player.points_against || 0) + pointsAgainst
+          }).eq('id', player.id);
+        });
+        await Promise.all(statUpdates);
+      }
       await fetchMatchesAndStandings(activeTournament.id);
     } else {
       const updated = activeMatches.map((item) => item.id === matchId
