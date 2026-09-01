@@ -188,6 +188,7 @@ h2 { font: 700 22px/1.2 'Space Grotesk', sans-serif; }
 .avatar-stack img + img { margin-left: -9px; }
 .team-row > input { width: 52px; height: 50px; padding: 0; border: 1px solid #bfdbfe; border-radius: 11px; color: var(--blue); background: #fff; font: 700 22px 'Space Grotesk', sans-serif; text-align: center; }
 .team-row > input:disabled { color: var(--blue); background: var(--blue-soft); }
+.team-row > .score-display { display: grid; width: 52px; height: 50px; place-items: center; border: 1px solid #dbeafe; border-radius: 11px; color: var(--blue); background: var(--blue-soft); font: 700 22px 'Space Grotesk', sans-serif; }
 .versus { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: #94a3b8; font-size: 10px; font-weight: 700; }
 .versus span { height: 1px; flex: 1; background: #e2e8f0; }
 .match-card-footer { gap: 10px; margin-top: 15px; }

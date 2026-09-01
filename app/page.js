@@ -1123,12 +1123,20 @@ export default function PDLUPEngineApp() {
                   <div className="match-card-header"><span>{match.courtName}</span><span className="match-type-badge" style={{ backgroundColor: match.badgeColor }}>{match.badge}</span></div>
                   <div className="team-row">
                     <div className="team-info"><div className="avatar-stack"><img src={match.team1.avatar1} alt="" /><img src={match.team1.avatar2} alt="" /></div><strong>{match.team1.name1} <em>&</em> {match.team1.name2}</strong></div>
-                    <input aria-label={`Score ${match.team1.name1} ${match.team1.name2}`} type="text" inputMode="numeric" value={match.score1} disabled={match.submitted || !canScore} onChange={(event) => handleScoreChange(match.id, 'score1', event.target.value)} placeholder="0" />
+                    {canScore ? (
+                      <input aria-label={`Score ${match.team1.name1} ${match.team1.name2}`} type="text" inputMode="numeric" value={match.score1} disabled={match.submitted} onChange={(event) => handleScoreChange(match.id, 'score1', event.target.value)} placeholder="0" />
+                    ) : (
+                      <span className="score-display" aria-label={`Score ${match.team1.name1} ${match.team1.name2}`}>{match.score1 || '–'}</span>
+                    )}
                   </div>
                   <div className="versus"><span />VS<span /></div>
                   <div className="team-row">
                     <div className="team-info"><div className="avatar-stack"><img src={match.team2.avatar1} alt="" /><img src={match.team2.avatar2} alt="" /></div><strong>{match.team2.name1} <em>&</em> {match.team2.name2}</strong></div>
-                    <input aria-label={`Score ${match.team2.name1} ${match.team2.name2}`} type="text" inputMode="numeric" value={match.score2} disabled={match.submitted || !canScore} onChange={(event) => handleScoreChange(match.id, 'score2', event.target.value)} placeholder="0" />
+                    {canScore ? (
+                      <input aria-label={`Score ${match.team2.name1} ${match.team2.name2}`} type="text" inputMode="numeric" value={match.score2} disabled={match.submitted} onChange={(event) => handleScoreChange(match.id, 'score2', event.target.value)} placeholder="0" />
+                    ) : (
+                      <span className="score-display" aria-label={`Score ${match.team2.name1} ${match.team2.name2}`}>{match.score2 || '–'}</span>
+                    )}
                   </div>
                   <div className="match-card-footer">
                     <span className={match.submitted ? 'complete-text' : 'pending-text'}>{match.submitted ? '● Score submitted' : '○ Waiting for score'}</span>
