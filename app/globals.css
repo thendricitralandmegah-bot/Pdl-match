@@ -124,6 +124,11 @@ h2 { font: 700 22px/1.2 'Space Grotesk', sans-serif; }
 .count-badge { display: grid; min-width: 26px; height: 24px; place-items: center; padding: 0 7px; border-radius: 999px; color: var(--blue); background: var(--blue-soft); font-size: 11px; font-weight: 700; }
 .add-player-row { display: flex; gap: 9px; }
 .add-player-row input { flex: 1; }
+.add-player-row select { min-width: 112px; padding: 0 10px; border: 1px solid #dbe3ef; border-radius: 10px; color: var(--ink); background: #fbfdff; font-size: 12px; }
+.manage-member-list { display: flex; flex-direction: column; gap: 6px; max-height: 170px; margin-top: 11px; overflow: auto; }
+.manage-member-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 9px; color: var(--ink); background: #fff; font-size: 12px; }
+.manage-member-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manage-member-row strong { color: var(--blue); font-size: 10px; text-transform: uppercase; }
 .player-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 48px; margin-top: 11px; padding: 11px; border: 1px dashed #cbd5e1; border-radius: 11px; background: #f8fafc; }
 .player-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px 5px 5px; border: 1px solid #bfdbfe; border-radius: 999px; color: #1d4ed8; background: #eff6ff; font-size: 12px; font-weight: 600; }
 .player-chip img, .table-player img { width: 24px; height: 24px; border-radius: 50%; }
