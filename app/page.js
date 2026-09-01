@@ -555,6 +555,9 @@ export default function PDLUPEngineApp() {
       setManagePlayers((current) => [...current, newPlayer]);
       setManagePlayerInput('');
       setErrorMessage('');
+      if (supabase && !String(activeTournament.id).startsWith('local-')) {
+        await fetchMatchesAndStandings(activeTournament.id, activeTournament);
+      }
     } catch (error) {
       setErrorMessage(`Pemain gagal ditambahkan: ${error.message}`);
     } finally {
@@ -576,6 +579,9 @@ export default function PDLUPEngineApp() {
       }
       setManagePlayers((current) => current.filter((item) => item.id !== player.id));
       setErrorMessage('');
+      if (supabase && !String(activeTournament.id).startsWith('local-')) {
+        await fetchMatchesAndStandings(activeTournament.id, activeTournament);
+      }
     } catch (error) {
       setErrorMessage(`Pemain gagal dihapus: ${error.message}`);
     } finally {
