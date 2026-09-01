@@ -211,6 +211,18 @@ tbody tr:last-child td { border-bottom: 0; }
 .log-dot { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: var(--blue); }
 
 .profile-card { padding: 38px 24px; border: 1px solid var(--line); border-radius: 20px; background: #fff; box-shadow: var(--shadow); text-align: center; }
+.auth-card { max-width: 460px; margin: 0 auto; padding: 34px; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: var(--shadow); }
+.auth-mark { display: grid; width: 42px; height: 42px; margin-bottom: 17px; place-items: center; border-radius: 12px; color: #fff; background: var(--blue); font: 700 20px 'Space Grotesk', sans-serif; }
+.auth-card h1 { margin-bottom: 8px; font-size: clamp(28px, 5vw, 38px); }
+.auth-card > .muted { margin-bottom: 23px; line-height: 1.6; }
+.auth-form { display: grid; gap: 14px; }
+.auth-form label { display: block; margin-bottom: 7px; color: #334155; font-size: 11px; font-weight: 800; }
+.auth-submit { width: 100%; margin-top: 4px; }
+.auth-message { margin: 14px 0 0; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 9px; color: #1d4ed8; background: #eff6ff; font-size: 12px; line-height: 1.5; }
+.auth-switch { width: 100%; margin-top: 17px; border: 0; color: var(--blue); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; }
+.auth-guest { width: 100%; margin-top: 13px; }
+.account-pill { max-width: 140px; overflow: hidden; padding: 8px 11px; border: 1px solid #bfdbfe; border-radius: 999px; color: var(--blue); background: #eff6ff; cursor: pointer; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.profile-logout { margin-top: 24px; }
 .profile-avatar { display: grid; width: 76px; height: 76px; place-items: center; margin: 0 auto 18px; border-radius: 24px; color: #fff; background: linear-gradient(135deg, var(--blue), #60a5fa); font: 700 30px 'Space Grotesk', sans-serif; }
 .profile-card h1 { margin-bottom: 7px; font-size: 30px; }
 .profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
@@ -226,6 +238,8 @@ tbody tr:last-child td { border-bottom: 0; }
 
 @media (max-width: 720px) {
   .topbar { padding: 12px 16px; }
+  .account-pill { max-width: 100px; }
+  .auth-card { padding: 26px 20px; }
   .page-container { width: min(100% - 28px, 620px); padding-top: 32px; }
   .page-heading, .detail-hero { align-items: flex-start; flex-direction: column; }
   .detail-hero-actions { width: 100%; justify-content: space-between; }

@@ -244,6 +244,15 @@ export default function PDLUPEngineApp() {
   const [playersList, setPlayersList] = useState(['Thendri', 'Budi', 'Andi', 'Siti', 'Rian', 'Eka', 'Deni', 'Fani']);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
 
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authDisplayName, setAuthDisplayName] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
   const totalRounds = activeTournament?.totalRounds || 4;
   const activeMatches = roundsMatches[currentRound] || [];
   const filteredTournaments = useMemo(() => {
@@ -253,6 +262,28 @@ export default function PDLUPEngineApp() {
 
   useEffect(() => {
     fetchTournaments();
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthReady(true);
+      return undefined;
+    }
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) {
+        setSession(data.session);
+        setAuthReady(true);
+      }
+    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
+    });
+    return () => {
+      mounted = false;
+      authSubscription.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -270,6 +301,61 @@ export default function PDLUPEngineApp() {
       supabase.removeChannel(channel);
     };
   }, [activeTournament]);
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!supabase) {
+      setAuthMessage('Supabase belum dikonfigurasi pada environment aplikasi.');
+      return;
+    }
+    if (!authEmail.trim() || !authPassword) {
+      setAuthMessage('Masukkan email dan password terlebih dahulu.');
+      return;
+    }
+    setIsAuthenticating(true);
+    setAuthMessage('');
+    try {
+      if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+          options: {
+            data: { display_name: authDisplayName.trim() || authEmail.split('@')[0] },
+            emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+          }
+        });
+        if (error) throw error;
+        if (data.session) {
+          setAuthMessage('Akun berhasil dibuat dan Anda sudah masuk.');
+          setCurrentView('PROFILE');
+        } else {
+          setAuthMessage('Akun berhasil dibuat. Periksa email Anda untuk konfirmasi sebelum masuk.');
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword });
+        if (error) throw error;
+        setAuthMessage('Berhasil masuk.');
+        setCurrentView('PROFILE');
+      }
+      setAuthPassword('');
+    } catch (error) {
+      setAuthMessage(error.message || 'Autentikasi gagal.');
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+    setSession(null);
+    setCurrentView('HOME');
+    setAuthMessage('');
+  }
 
   async function fetchTournaments() {
     setIsLoading(true);
@@ -760,6 +846,7 @@ export default function PDLUPEngineApp() {
         </button>
         <div className="topbar-actions">
           {currentView === 'TOURNAMENT_DETAIL' && <button className="ghost-button" onClick={goHome}>← Tournaments</button>}
+          {authReady && (session ? <button className="account-pill" onClick={() => setCurrentView('PROFILE')} title={session.user.email}>{session.user.email?.split('@')[0]}</button> : <button className="ghost-button" onClick={() => { setAuthMode('signin'); setAuthMessage(''); setCurrentView('AUTH'); }}>Sign in</button>)}
           <button className="icon-button" aria-label="Settings">⚙</button>
         </div>
       </header>
@@ -1002,14 +1089,34 @@ export default function PDLUPEngineApp() {
         </section>
       )}
 
+      {currentView === 'AUTH' && (
+        <section className="page-container narrow-page auth-page">
+          <div className="auth-card">
+            <div className="auth-mark">P</div>
+            <p className="eyebrow">PDL-MATCH ACCOUNT</p>
+            <h1>{authMode === 'signin' ? 'Welcome back.' : 'Create your account.'}</h1>
+            <p className="muted">Sign in to manage tournaments and collaborate with your team.</p>
+            <form className="auth-form" onSubmit={handleAuthSubmit}>
+              {authMode === 'signup' && <div><label htmlFor="auth-name">Display name</label><input id="auth-name" value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="e.g. Thendri" autoComplete="name" /></div>}
+              <div><label htmlFor="auth-email">Email</label><input id="auth-email" type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" required /></div>
+              <div><label htmlFor="auth-password">Password</label><input id="auth-password" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="At least 6 characters" autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'} minLength="6" required /></div>
+              <button className="primary-button auth-submit" type="submit" disabled={isAuthenticating}>{isAuthenticating ? 'Please wait…' : authMode === 'signin' ? 'Sign in' : 'Create account'}</button>
+            </form>
+            {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
+            <button className="auth-switch" onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthMessage(''); }}>{authMode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}</button>
+            <button className="ghost-button auth-guest" onClick={goHome}>Continue as guest</button>
+          </div>
+        </section>
+      )}
+
       {currentView === 'PROFILE' && (
-        <section className="page-container narrow-page"><div className="profile-card"><div className="profile-avatar">T</div><p className="eyebrow">PROFILE</p><h1>Thendri</h1><p className="muted">Padel Community Organizer</p><div className="profile-stats"><div><strong>{tournaments.length}</strong><span>Tournaments</span></div><div><strong>—</strong><span>Matches</span></div><div><strong>10</strong><span>Coins</span></div></div></div></section>
+        <section className="page-container narrow-page"><div className="profile-card"><div className="profile-avatar">{session?.user.email?.slice(0, 1).toUpperCase() || 'P'}</div><p className="eyebrow">PROFILE</p><h1>{session?.user.user_metadata?.display_name || session?.user.email?.split('@')[0] || 'Guest'}</h1><p className="muted">{session?.user.email || 'Sign in to access your account.'}</p><div className="profile-stats"><div><strong>{tournaments.length}</strong><span>Tournaments</span></div><div><strong>—</strong><span>Matches</span></div><div><strong>—</strong><span>Role</span></div></div>{session ? <button className="ghost-button profile-logout" onClick={handleSignOut}>Sign out</button> : <button className="primary-button" onClick={() => { setAuthMode('signin'); setCurrentView('AUTH'); }}>Sign in</button>}</div></section>
       )}
 
       <nav className="bottom-nav">
         <button className={currentView === 'HOME' ? 'active' : ''} onClick={goHome}><span>⌂</span><small>Home</small></button>
         <button className="create-fab" onClick={() => setCurrentView('CREATE')} aria-label="Create tournament">＋</button>
-        <button className={currentView === 'PROFILE' ? 'active' : ''} onClick={() => setCurrentView('PROFILE')}><span>◯</span><small>Profile</small></button>
+        <button className={currentView === 'PROFILE' || currentView === 'AUTH' ? 'active' : ''} onClick={() => setCurrentView(session ? 'PROFILE' : 'AUTH')}><span>◯</span><small>Profile</small></button>
       </nav>
     </main>
   );
