@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'PDLUP — Padel Matchmaker',
-  description: 'Create balanced padel matches, track scores, and run better tournaments.',
+  title: 'PD-Match Dadakan — Padel Matchmaker',
+  description: 'Spontaneous padel matches, quick tournament setup, and live score tracking.',
 }
 
 export default function RootLayout({ children }) {
