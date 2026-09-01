@@ -228,6 +228,7 @@ export default function PDLUPEngineApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [shareNotice, setShareNotice] = useState('');
 
   const [formName, setFormName] = useState('');
   const [formMatchType, setFormMatchType] = useState('Americano');
@@ -287,6 +288,9 @@ export default function PDLUPEngineApp() {
         return normalizeTournament({ ...tournament, players_count: count ?? tournament.players_count ?? 0 });
       }));
       setTournaments(enrichedTournaments);
+      const sharedSlug = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tournament') : null;
+      const sharedTournament = sharedSlug ? enrichedTournaments.find((item) => item.share_slug === sharedSlug || item.id === sharedSlug) : null;
+      if (sharedTournament) openTournament(sharedTournament);
     }
     setIsLoading(false);
   }
@@ -495,12 +499,36 @@ export default function PDLUPEngineApp() {
     setMatchLogs((current) => [`Round ${currentRound} · ${match.courtName} · ${team1} ${score1}–${score2} ${team2}`, ...current]);
   }
 
+  async function handleShareTournament() {
+    if (!activeTournament) return;
+    const slug = activeTournament.share_slug || activeTournament.id;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?tournament=${encodeURIComponent(slug)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: activeTournament.name, text: `Live tournament: ${activeTournament.name}`, url: shareUrl });
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareNotice('Share link copied');
+        window.setTimeout(() => setShareNotice(''), 2600);
+      } else {
+        window.prompt('Copy this share link', shareUrl);
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') setErrorMessage('Share link belum dapat dibagikan dari browser ini.');
+    }
+  }
+
   function openTournament(tournament) {
     const normalized = normalizeTournament(tournament);
     setActiveTournament(normalized);
     setCurrentRound(1);
     setDetailTab('MATCHES');
+    setShareNotice('');
     setCurrentView('TOURNAMENT_DETAIL');
+    if (typeof window !== 'undefined') {
+      const slug = normalized.share_slug || normalized.id;
+      window.history.replaceState({}, '', `${window.location.pathname}?tournament=${encodeURIComponent(slug)}`);
+    }
     fetchMatchesAndStandings(normalized.id);
   }
 
@@ -508,6 +536,8 @@ export default function PDLUPEngineApp() {
     setCurrentView('HOME');
     setActiveTournament(null);
     setErrorMessage('');
+    setShareNotice('');
+    if (typeof window !== 'undefined') window.history.replaceState({}, '', window.location.pathname);
   }
 
   return (
@@ -669,8 +699,12 @@ export default function PDLUPEngineApp() {
               <h1>{activeTournament.name}</h1>
               <p className="muted">{activeTournament.matchType} · {activeTournament.courts} {activeTournament.courts === 1 ? 'court' : 'courts'} · {activeTournament.totalRounds} rounds</p>
             </div>
-            <span className="live-badge"><i /> {activeTournament.status}</span>
+            <div className="detail-hero-actions">
+              <button className="share-button" onClick={handleShareTournament}>↗ Share</button>
+              <span className="live-badge"><i /> {activeTournament.status}</span>
+            </div>
           </div>
+          {shareNotice && <div className="share-notice" role="status">✓ {shareNotice}</div>}
 
           <div className="round-nav">
             <button disabled={currentRound === 1} onClick={() => setCurrentRound((value) => value - 1)}>← Previous</button>
