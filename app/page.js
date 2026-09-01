@@ -229,6 +229,11 @@ export default function PDLUPEngineApp() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [shareNotice, setShareNotice] = useState('');
+  const [showManage, setShowManage] = useState(false);
+  const [managePlayers, setManagePlayers] = useState([]);
+  const [managePlayerInput, setManagePlayerInput] = useState('');
+  const [manageCourts, setManageCourts] = useState(1);
+  const [isManaging, setIsManaging] = useState(false);
 
   const [formName, setFormName] = useState('');
   const [formMatchType, setFormMatchType] = useState('Americano');
@@ -295,7 +300,7 @@ export default function PDLUPEngineApp() {
     setIsLoading(false);
   }
 
-  async function fetchMatchesAndStandings(tournamentId) {
+  async function fetchMatchesAndStandings(tournamentId, tournamentForSetup = activeTournament) {
     if (!supabase) return;
     const [{ data: matchesData, error: matchesError }, { data: playersData, error: playersError }] = await Promise.all([
       supabase.from('matches').select('*').eq('tournament_id', tournamentId).order('round_number').order('court_number'),
@@ -311,6 +316,8 @@ export default function PDLUPEngineApp() {
       grouped[match.round_number].push(mapRemoteMatch(match));
     });
     setRoundsMatches(grouped);
+    setManagePlayers((playersData || []).map((player) => ({ id: player.id, name: player.name })));
+    setManageCourts(normalizeTournament(tournamentForSetup || {}).courts || 1);
     setStandings(calculateStandings((playersData || []).map((player) => ({ id: player.id, name: player.name })), matchesData || []));
     setMatchLogs((matchesData || [])
       .filter((match) => match.is_completed)
@@ -423,7 +430,7 @@ export default function PDLUPEngineApp() {
       setCurrentRound(1);
       setDetailTab('MATCHES');
       setCurrentView('TOURNAMENT_DETAIL');
-      if (supabase) await fetchMatchesAndStandings(tournamentId);
+      if (supabase) await fetchMatchesAndStandings(tournamentId, newTournament);
     } catch (error) {
       setErrorMessage(error.message || 'Tournament gagal dibuat.');
     } finally {
@@ -526,18 +533,93 @@ export default function PDLUPEngineApp() {
     }
   }
 
+  async function handleManageAddPlayer() {
+    const name = managePlayerInput.trim();
+    if (!name || !activeTournament) return;
+    if (managePlayers.some((player) => player.name.toLowerCase() === name.toLowerCase())) {
+      setErrorMessage('Nama pemain tersebut sudah ada.');
+      return;
+    }
+    setIsManaging(true);
+    try {
+      let newPlayer = { id: `local-player-${Date.now()}`, name };
+      if (supabase && !String(activeTournament.id).startsWith('local-')) {
+        const { data, error } = await supabase
+          .from('players')
+          .insert([{ tournament_id: activeTournament.id, name, matches_played: 0, wins: 0, points_for: 0, points_against: 0 }])
+          .select('id,name')
+          .single();
+        if (error) throw error;
+        newPlayer = data;
+      }
+      setManagePlayers((current) => [...current, newPlayer]);
+      setManagePlayerInput('');
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Pemain gagal ditambahkan: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
+  async function handleManageRemovePlayer(player) {
+    if (!activeTournament) return;
+    if (managePlayers.length <= 4) {
+      setErrorMessage('Tournament harus memiliki minimal 4 pemain.');
+      return;
+    }
+    setIsManaging(true);
+    try {
+      if (supabase && !String(player.id).startsWith('local-')) {
+        const { error } = await supabase.from('players').delete().eq('id', player.id);
+        if (error) throw error;
+      }
+      setManagePlayers((current) => current.filter((item) => item.id !== player.id));
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Pemain gagal dihapus: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
+  async function handleSaveCourtCount() {
+    if (!activeTournament) return;
+    const courts = clamp(Number(manageCourts) || 1, 1, 20);
+    if (managePlayers.length < courts * 4) {
+      setErrorMessage(`Jumlah pemain belum cukup untuk ${courts} court. Tambahkan minimal ${courts * 4} pemain.`);
+      return;
+    }
+    setIsManaging(true);
+    try {
+      if (supabase && !String(activeTournament.id).startsWith('local-')) {
+        const { error } = await supabase.from('tournaments').update({ court_count: courts }).eq('id', activeTournament.id);
+        if (error) throw error;
+      }
+      const updatedTournament = { ...activeTournament, courts };
+      setActiveTournament(updatedTournament);
+      setTournaments((current) => current.map((item) => item.id === updatedTournament.id ? updatedTournament : item));
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Pengaturan court gagal disimpan: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
   function openTournament(tournament) {
     const normalized = normalizeTournament(tournament);
     setActiveTournament(normalized);
     setCurrentRound(1);
     setDetailTab('MATCHES');
     setShareNotice('');
+    setShowManage(false);
     setCurrentView('TOURNAMENT_DETAIL');
     if (typeof window !== 'undefined') {
       const slug = normalized.share_slug || normalized.id;
       window.history.replaceState({}, '', `${window.location.pathname}?tournament=${encodeURIComponent(slug)}`);
     }
-    fetchMatchesAndStandings(normalized.id);
+    fetchMatchesAndStandings(normalized.id, normalized);
   }
 
   function goHome() {
@@ -708,11 +790,36 @@ export default function PDLUPEngineApp() {
               <p className="muted">{activeTournament.matchType} · {activeTournament.courts} {activeTournament.courts === 1 ? 'court' : 'courts'} · {activeTournament.totalRounds} rounds</p>
             </div>
             <div className="detail-hero-actions">
+              <button className="share-button" onClick={() => setShowManage((value) => !value)}>{showManage ? '× Close' : '⚙ Manage'}</button>
               <button className="share-button" onClick={handleShareTournament}>↗ Share</button>
               <span className="live-badge"><i /> {activeTournament.status}</span>
             </div>
           </div>
           {shareNotice && <div className="share-notice" role="status">✓ {shareNotice}</div>}
+
+          {showManage && (
+            <div className="manage-panel">
+              <div className="section-title"><div><p className="eyebrow">TOURNAMENT SETUP</p><h2>Manage players & courts</h2></div><span>{managePlayers.length} players</span></div>
+              <div className="manage-grid">
+                <div className="manage-section">
+                  <label htmlFor="manage-player-input">Add player</label>
+                  <div className="add-player-row">
+                    <input id="manage-player-input" value={managePlayerInput} onChange={(event) => setManagePlayerInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); handleManageAddPlayer(); } }} placeholder="Player name" />
+                    <button type="button" className="secondary-button" onClick={handleManageAddPlayer} disabled={isManaging}>＋ Add</button>
+                  </div>
+                  <div className="manage-player-list">
+                    {managePlayers.map((player) => <div className="manage-player-row" key={player.id}><span><img src={avatarUrl(player.name)} alt="" />{player.name}</span><button type="button" onClick={() => handleManageRemovePlayer(player)} disabled={isManaging} aria-label={`Remove ${player.name}`}>Remove</button></div>)}
+                  </div>
+                  <small className="helper-text">Removing a player does not regenerate existing matches.</small>
+                </div>
+                <div className="manage-section">
+                  <label htmlFor="manage-courts">Courts</label>
+                  <div className="manage-court-control"><input id="manage-courts" type="number" min="1" max="20" value={manageCourts} onChange={(event) => setManageCourts(clamp(Number(event.target.value) || 1, 1, 20))} /><button type="button" className="primary-button" onClick={handleSaveCourtCount} disabled={isManaging}>{isManaging ? 'Saving…' : 'Save courts'}</button></div>
+                  <small className="helper-text">Minimum 4 players per court. This changes the tournament setup for future scheduling.</small>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="round-nav">
             <button disabled={currentRound === 1} onClick={() => setCurrentRound((value) => value - 1)}>← Previous</button>
