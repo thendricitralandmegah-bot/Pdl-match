@@ -254,3 +254,64 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @media (max-width: 900px) { .hero-grid { grid-template-columns: 1fr; } .hero-visual { display: none; } .tournament-featured .tournament-card-content { max-width: 76%; } }
 @media (max-width: 720px) { .container { width: min(100% - 1.75rem, 620px); } .section-heading { align-items: flex-start; flex-direction: column; } .filter-group { width: 100%; justify-content: space-between; } .tournament-grid { grid-template-columns: 1fr; } .tournament-card.tournament-featured { grid-column: auto; } .tournament-featured .tournament-card-content { max-width: 88%; } .ritual-section { grid-template-columns: 1fr; } .stats-grid { gap: .75rem; } .stat-card { padding: .85rem; } .stat-card > div span { font-size: .55rem; letter-spacing: .1em; } }
 @media (max-width: 460px) { .hero-copy h1 { font-size: 2.65rem; } .desktop-break { display: none; } .hero-actions { align-items: stretch; flex-direction: column; } .hero-primary, .hero-secondary { justify-content: center; } .stats-grid { grid-template-columns: 1fr; } .form-two-col, .detail-meta { grid-template-columns: 1fr; } .create-modal { padding: 1.25rem; } .detail-heading { align-items: flex-start; flex-direction: column; } .invite-action { width: 100%; justify-content: center; } .signal-inner { padding: 1.25rem; } .signal-top { gap: .8rem; } .signal-top strong { font-size: 1rem; } }
+
+/* Match manager — PDLUP-style rounds and scoring surface, reinterpreted in Terracotta Court. */
+.detail-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; margin-top: 1.5rem; padding: .25rem; border-radius: 13px; background: #f1e9e4; }
+.detail-tabs button { min-height: 40px; border-radius: 9px; color: var(--muted); background: transparent; font-size: .72rem; font-weight: 800; transition: color .18s var(--ease-out), background .18s var(--ease-out), transform .18s var(--ease-out); }
+.detail-tabs button:hover { color: var(--navy); background: rgba(255,255,255,.7); }
+.detail-tabs button.detail-tab-active { color: white; background: var(--blue); box-shadow: 0 4px 12px rgba(231,101,63,.18); }
+.detail-tabs button:active { transform: scale(.98); }
+.detail-tabs button span { margin-left: .25rem; color: currentColor; opacity: .7; font-size: .65rem; }
+.detail-message, .detail-error { display: flex; align-items: flex-start; gap: .5rem; margin-top: 1rem; padding: .75rem .85rem; border-radius: 11px; font-size: .72rem; line-height: 1.45; }
+.detail-message { color: #23665b; background: #e8f5f1; border: 1px solid #c3e5dc; }
+.detail-error { color: #9a3c29; background: #fff0eb; border: 1px solid #f4c6b8; }
+.detail-message svg, .detail-error svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: .05rem; }
+.detail-overview { margin-top: 1.25rem; }
+.player-add-form { display: flex; gap: .6rem; margin-top: 1rem; }
+.player-add-form input { min-width: 0; flex: 1; height: 42px; padding: 0 .8rem; border: 1px solid var(--line); border-radius: 10px; color: var(--navy); background: white; font-size: .75rem; outline: none; }
+.player-add-form input:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(231,101,63,.1); }
+.player-add-form .secondary-action { height: 42px; padding: 0 .85rem; }
+.player-add-form .secondary-action svg { width: 14px; height: 14px; }
+.roster-chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .8rem; }
+.roster-chips span { padding: .4rem .62rem; border: 1px solid #c3e5dc; border-radius: 999px; color: #23665b; background: #e8f5f1; font-size: .68rem; font-weight: 700; }
+.roster-chips small { color: var(--muted); font-size: .72rem; line-height: 1.5; }
+.matches-panel { margin-top: 1.25rem; }
+.match-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.match-toolbar .round-nav { flex: 1; margin: 0; padding: .5rem .65rem; border: 1px solid var(--line); box-shadow: none; }
+.match-toolbar .round-nav button { min-height: 32px; }
+.match-toolbar .round-nav strong { font-size: .95rem; }
+.generate-match-button { display: inline-flex; min-height: 42px; align-items: center; gap: .45rem; padding: 0 .85rem; border-radius: 11px; color: white; background: var(--blue); box-shadow: 0 8px 18px rgba(231,101,63,.18); font-size: .68rem; font-weight: 800; white-space: nowrap; transition: background .18s var(--ease-out), transform .18s var(--ease-out); }
+.generate-match-button:hover { background: #c74d31; transform: translateY(-1px); }
+.generate-match-button:active { transform: scale(.98); }
+.generate-match-button svg { width: 14px; height: 14px; }
+.match-grid { display: grid; gap: .75rem; margin-top: 1rem; }
+.match-card { padding: 1rem; border: 1px solid var(--line); border-radius: 16px; background: white; box-shadow: 0 5px 16px rgba(33,28,26,.035); }
+.match-card-top { display: flex; align-items: center; justify-content: space-between; color: var(--soft-muted); font-size: .6rem; font-weight: 800; letter-spacing: .12em; }
+.match-badge { padding: .32rem .5rem; border-radius: 999px; color: #8a5b1e; background: #fff4d8; font-size: .53rem; }
+.match-badge-complete { color: #23665b; background: #e8f5f1; }
+.match-teams { display: grid; gap: .65rem; margin-top: .9rem; }
+.team-row { display: grid; align-items: center; gap: .5rem; grid-template-columns: 24px minmax(0, 1fr) 54px; }
+.team-label { display: flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 8px; color: white; background: var(--blue); font-size: .65rem; font-weight: 800; }
+.team-label.team-b { color: #17443e; background: var(--lime); }
+.team-row > div { min-width: 0; }
+.team-row strong, .team-row em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-row strong { color: var(--navy); font-size: .75rem; }
+.team-row em { color: var(--soft-muted); font-size: .7rem; font-style: normal; }
+.team-row input { width: 54px; height: 38px; border: 1px solid var(--line); border-radius: 9px; color: var(--navy); background: #fbf8f5; font: 700 1rem 'Sora', sans-serif; text-align: center; outline: none; }
+.team-row input:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(231,101,63,.1); }
+.save-score-action { display: inline-flex; min-height: 34px; align-items: center; gap: .4rem; margin-top: .85rem; padding: 0 .7rem; border-radius: 9px; color: #23665b; background: #e8f5f1; font-size: .65rem; font-weight: 800; transition: background .18s var(--ease-out), transform .18s var(--ease-out); }
+.save-score-action:hover { background: #d4eee7; }
+.save-score-action:active { transform: scale(.98); }
+.save-score-action svg { width: 13px; height: 13px; }
+.match-empty { display: flex; align-items: center; flex-direction: column; margin-top: 1rem; padding: 2.25rem 1.25rem; border: 1px dashed #d8c9c1; border-radius: 16px; background: #fdf9f6; text-align: center; }
+.match-empty > svg { width: 22px; height: 22px; color: var(--blue); }
+.match-empty .spinner { display: block; width: 18px; height: 18px; margin: 0 0 .75rem; }
+.match-empty h3 { margin: .8rem 0 0; color: var(--navy); font: 700 1rem 'Sora', sans-serif; letter-spacing: -.03em; }
+.match-empty p { max-width: 300px; margin: .45rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.55; }
+.match-empty .primary-action { min-height: 38px; margin-top: 1rem; font-size: .68rem; }
+.standings-panel { display: grid; gap: .5rem; margin-top: 1.25rem; }
+.standing-row { display: grid; align-items: center; gap: .75rem; padding: .75rem .85rem; border: 1px solid var(--line); border-radius: 12px; background: white; grid-template-columns: 28px minmax(0,1fr) auto; }
+.standing-row > span { color: var(--soft-muted); font: 700 .65rem monospace; }
+.standing-row strong { overflow: hidden; color: var(--navy); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.standing-row em { color: var(--blue); font-size: .67rem; font-style: normal; font-weight: 800; }
+@media (max-width: 520px) { .detail-body { padding: 1.25rem; } .match-toolbar { align-items: stretch; flex-direction: column; } .generate-match-button { justify-content: center; } .detail-meta { gap: .6rem; } }
