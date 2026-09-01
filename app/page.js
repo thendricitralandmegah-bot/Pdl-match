@@ -312,6 +312,14 @@ export default function PDLUPEngineApp() {
     });
     setRoundsMatches(grouped);
     setStandings(calculateStandings((playersData || []).map((player) => ({ id: player.id, name: player.name })), matchesData || []));
+    setMatchLogs((matchesData || [])
+      .filter((match) => match.is_completed)
+      .sort((a, b) => (b.round_number - a.round_number) || (b.court_number - a.court_number))
+      .map((match) => {
+        const teamA = Array.isArray(match.team_a) ? match.team_a.join(' & ') : 'Team A';
+        const teamB = Array.isArray(match.team_b) ? match.team_b.join(' & ') : 'Team B';
+        return `Round ${match.round_number} · Court ${match.court_number} · ${teamA} ${match.score_a}–${match.score_b} ${teamB}`;
+      }));
   }
 
   function handleAddPlayer() {
@@ -757,7 +765,7 @@ export default function PDLUPEngineApp() {
           )}
 
           {detailTab === 'LOGS' && (
-            <div className="logs-card"><div className="section-title"><div><p className="eyebrow">TOURNAMENT HISTORY</p><h2>Activity</h2></div></div>{matchLogs.length === 0 ? <div className="empty-inline">Scores submitted in this session will appear here.</div> : <div className="log-list">{matchLogs.map((log, index) => <div className="log-item" key={`${log}-${index}`}><span className="log-dot" /><span>{log}</span></div>)}</div>}</div>
+            <div className="logs-card"><div className="section-title"><div><p className="eyebrow">TOURNAMENT HISTORY</p><h2>Activity</h2></div><span>{matchLogs.length} completed</span></div>{matchLogs.length === 0 ? <div className="empty-inline">No completed matches yet.</div> : <div className="log-list">{matchLogs.map((log, index) => <div className="log-item" key={`${log}-${index}`}><span className="log-dot" /><span>{log}</span></div>)}</div>}</div>
           )}
         </section>
       )}
