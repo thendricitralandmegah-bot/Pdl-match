@@ -252,7 +252,10 @@ export default function PDLUPEngineApp() {
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [authMessage, setAuthMessage] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [currentRole, setCurrentRole] = useState(null);
 
+  const canManage = Boolean(session && currentRole === 'admin');
+  const canScore = Boolean(session && ['admin', 'scorer'].includes(currentRole));
   const totalRounds = activeTournament?.totalRounds || 4;
   const activeMatches = roundsMatches[currentRound] || [];
   const filteredTournaments = useMemo(() => {
@@ -288,6 +291,22 @@ export default function PDLUPEngineApp() {
 
   useEffect(() => {
     if (!supabase || !activeTournament) return undefined;
+    let cancelled = false;
+    setCurrentRole(null);
+    (async () => {
+      if (!session) return;
+      if (activeTournament.owner_id && activeTournament.owner_id === session.user.id) {
+        if (!cancelled) setCurrentRole('admin');
+        return;
+      }
+      const { data } = await supabase
+        .from('tournament_members')
+        .select('role')
+        .eq('tournament_id', activeTournament.id)
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      if (!cancelled) setCurrentRole(data?.role || null);
+    })();
     const channel = supabase
       .channel(`matches-${activeTournament.id}`)
       .on('postgres_changes', {
@@ -298,9 +317,10 @@ export default function PDLUPEngineApp() {
       }, () => fetchMatchesAndStandings(activeTournament.id))
       .subscribe();
     return () => {
+      cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [activeTournament]);
+  }, [activeTournament, session]);
 
   async function handleAuthSubmit(event) {
     event.preventDefault();
@@ -342,6 +362,24 @@ export default function PDLUPEngineApp() {
       setAuthMessage(error.message || 'Autentikasi gagal.');
     } finally {
       setIsAuthenticating(false);
+    }
+  }
+
+  async function handleClaimTournament() {
+    if (!supabase || !session || !activeTournament) return;
+    setIsManaging(true);
+    setErrorMessage('');
+    try {
+      const { data, error } = await supabase.rpc('claim_tournament', { tournament_uuid: activeTournament.id });
+      if (error) throw error;
+      const claimed = normalizeTournament(data);
+      setActiveTournament(claimed);
+      setTournaments((current) => current.map((item) => item.id === claimed.id ? { ...item, ...claimed } : item));
+      setCurrentRole('admin');
+    } catch (error) {
+      setErrorMessage(`Tournament gagal diklaim: ${error.message}`);
+    } finally {
+      setIsManaging(false);
     }
   }
 
@@ -434,6 +472,11 @@ export default function PDLUPEngineApp() {
   async function handleCreateTournamentSubmit(event) {
     event.preventDefault();
     setErrorMessage('');
+    if (!session) {
+      setErrorMessage('Sign in terlebih dahulu untuk membuat tournament.');
+      setCurrentView('AUTH');
+      return;
+    }
     const name = formName.trim() || 'New Tournament';
     const courts = clamp(Number(formCourts) || 1, 1, 20);
     const rounds = clamp(Number(formRounds) || 1, 1, 30);
@@ -454,18 +497,13 @@ export default function PDLUPEngineApp() {
       let savedMatches = [];
 
       if (supabase) {
-        const { data: tournamentData, error: tournamentError } = await supabase
-          .from('tournaments')
-          .insert([{
-            name,
-            match_type: formMatchType,
-            target_points: targetPoints,
-            court_count: courts,
-            total_rounds: rounds,
-            status: 'Active'
-          }])
-          .select()
-          .single();
+        const { data: tournamentData, error: tournamentError } = await supabase.rpc('create_tournament_with_admin', {
+          tournament_name: name,
+          tournament_match_type: formMatchType,
+          tournament_target_points: targetPoints,
+          tournament_court_count: courts,
+          tournament_total_rounds: rounds
+        });
         if (tournamentError) throw tournamentError;
         tournamentId = tournamentData.id;
 
@@ -510,6 +548,7 @@ export default function PDLUPEngineApp() {
       });
       setTournaments((current) => [newTournament, ...current.filter((item) => item.id !== tournamentId)]);
       setActiveTournament(newTournament);
+      setCurrentRole('admin');
       setRoundsMatches(localRounds);
       setStandings(calculateStandings(playersList, []));
       setMatchLogs([]);
@@ -533,6 +572,10 @@ export default function PDLUPEngineApp() {
   }
 
   async function handleSubmitScore(matchId) {
+    if (!canScore) {
+      setErrorMessage('Anda tidak memiliki izin untuk memasukkan skor tournament ini.');
+      return;
+    }
     const match = activeMatches.find((item) => item.id === matchId);
     if (!match || match.score1 === '' || match.score2 === '') {
       setErrorMessage('Masukkan skor kedua tim terlebih dahulu.');
@@ -620,6 +663,10 @@ export default function PDLUPEngineApp() {
   }
 
   async function handleManageAddPlayer() {
+    if (!canManage) {
+      setErrorMessage('Hanya admin yang dapat mengelola pemain.');
+      return;
+    }
     const name = managePlayerInput.trim();
     if (!name || !activeTournament) return;
     if (managePlayers.some((player) => player.name.toLowerCase() === name.toLowerCase())) {
@@ -652,6 +699,10 @@ export default function PDLUPEngineApp() {
   }
 
   async function handleManageRemovePlayer(player) {
+    if (!canManage) {
+      setErrorMessage('Hanya admin yang dapat mengelola pemain.');
+      return;
+    }
     if (!activeTournament) return;
     if (managePlayers.length <= 4) {
       setErrorMessage('Tournament harus memiliki minimal 4 pemain.');
@@ -676,6 +727,10 @@ export default function PDLUPEngineApp() {
   }
 
   async function handleRegenerateSchedule() {
+    if (!canManage) {
+      setErrorMessage('Hanya admin yang dapat membuat ulang jadwal.');
+      return;
+    }
     if (!activeTournament) return;
     const courts = clamp(Number(manageCourts) || 1, 1, 20);
     const rounds = clamp(Number(activeTournament.totalRounds) || 1, 1, 30);
@@ -724,6 +779,10 @@ export default function PDLUPEngineApp() {
   }
 
   async function handleRegenerateUpcoming() {
+    if (!canManage) {
+      setErrorMessage('Hanya admin yang dapat membuat ulang ronde.');
+      return;
+    }
     if (!activeTournament) return;
     const courts = clamp(Number(manageCourts) || 1, 1, 20);
     const rounds = clamp(Number(activeTournament.totalRounds) || 1, 1, 30);
@@ -788,6 +847,10 @@ export default function PDLUPEngineApp() {
   }
 
   async function handleSaveCourtCount() {
+    if (!canManage) {
+      setErrorMessage('Hanya admin yang dapat mengubah jumlah court.');
+      return;
+    }
     if (!activeTournament) return;
     const courts = clamp(Number(manageCourts) || 1, 1, 20);
     if (managePlayers.length < courts * 4) {
@@ -867,7 +930,7 @@ export default function PDLUPEngineApp() {
               <h1>Your next rally starts here.</h1>
               <p className="muted">Create balanced matches, track scores, and keep the group moving.</p>
             </div>
-            <button className="primary-button" onClick={() => setCurrentView('CREATE')}>＋ Create Tournament</button>
+            <button className="primary-button" onClick={() => setCurrentView(session ? 'CREATE' : 'AUTH')}>＋ Create Tournament</button>
           </div>
 
           <div className="filter-row" role="tablist" aria-label="Filter tournaments">
@@ -883,7 +946,7 @@ export default function PDLUPEngineApp() {
               <div className="empty-icon">🎾</div>
               <h2>{homeFilter === 'All' ? 'No tournaments yet' : `No ${homeFilter.toLowerCase()} tournaments`}</h2>
               <p>{homeFilter === 'All' ? 'Create your first padel match to start live scoring.' : 'Try another filter or create a new tournament.'}</p>
-              <button className="primary-button" onClick={() => setCurrentView('CREATE')}>＋ Create Tournament</button>
+              <button className="primary-button" onClick={() => setCurrentView(session ? 'CREATE' : 'AUTH')}>＋ Create Tournament</button>
             </div>
           ) : (
             <div className="tournament-grid">
@@ -995,8 +1058,10 @@ export default function PDLUPEngineApp() {
               <p className="muted">{activeTournament.matchType} · {activeTournament.courts} {activeTournament.courts === 1 ? 'court' : 'courts'} · {activeTournament.totalRounds} rounds</p>
             </div>
             <div className="detail-hero-actions">
-              <button className="share-button" onClick={() => setShowManage((value) => !value)}>{showManage ? '× Close' : '⚙ Manage'}</button>
+              {canManage && <button className="share-button" onClick={() => setShowManage((value) => !value)}>{showManage ? '× Close' : '⚙ Manage'}</button>}
+              {session && !currentRole && !activeTournament.owner_id && <button className="share-button claim-button" onClick={handleClaimTournament} disabled={isManaging}>Claim as admin</button>}
               <button className="share-button" onClick={handleShareTournament}>↗ Share</button>
+              {session && currentRole && <span className="role-badge">{currentRole}</span>}
               <span className="live-badge"><i /> {activeTournament.status}</span>
             </div>
           </div>
@@ -1058,16 +1123,16 @@ export default function PDLUPEngineApp() {
                   <div className="match-card-header"><span>{match.courtName}</span><span className="match-type-badge" style={{ backgroundColor: match.badgeColor }}>{match.badge}</span></div>
                   <div className="team-row">
                     <div className="team-info"><div className="avatar-stack"><img src={match.team1.avatar1} alt="" /><img src={match.team1.avatar2} alt="" /></div><strong>{match.team1.name1} <em>&</em> {match.team1.name2}</strong></div>
-                    <input aria-label={`Score ${match.team1.name1} ${match.team1.name2}`} type="text" inputMode="numeric" value={match.score1} disabled={match.submitted} onChange={(event) => handleScoreChange(match.id, 'score1', event.target.value)} placeholder="0" />
+                    <input aria-label={`Score ${match.team1.name1} ${match.team1.name2}`} type="text" inputMode="numeric" value={match.score1} disabled={match.submitted || !canScore} onChange={(event) => handleScoreChange(match.id, 'score1', event.target.value)} placeholder="0" />
                   </div>
                   <div className="versus"><span />VS<span /></div>
                   <div className="team-row">
                     <div className="team-info"><div className="avatar-stack"><img src={match.team2.avatar1} alt="" /><img src={match.team2.avatar2} alt="" /></div><strong>{match.team2.name1} <em>&</em> {match.team2.name2}</strong></div>
-                    <input aria-label={`Score ${match.team2.name1} ${match.team2.name2}`} type="text" inputMode="numeric" value={match.score2} disabled={match.submitted} onChange={(event) => handleScoreChange(match.id, 'score2', event.target.value)} placeholder="0" />
+                    <input aria-label={`Score ${match.team2.name1} ${match.team2.name2}`} type="text" inputMode="numeric" value={match.score2} disabled={match.submitted || !canScore} onChange={(event) => handleScoreChange(match.id, 'score2', event.target.value)} placeholder="0" />
                   </div>
                   <div className="match-card-footer">
                     <span className={match.submitted ? 'complete-text' : 'pending-text'}>{match.submitted ? '● Score submitted' : '○ Waiting for score'}</span>
-                    {!match.submitted && <button className="save-score-button" onClick={() => handleSubmitScore(match.id)}>Save score</button>}
+                    {!match.submitted && canScore && <button className="save-score-button" onClick={() => handleSubmitScore(match.id)}>Save score</button>}
                   </div>
                 </article>
               ))}
@@ -1115,7 +1180,7 @@ export default function PDLUPEngineApp() {
 
       <nav className="bottom-nav">
         <button className={currentView === 'HOME' ? 'active' : ''} onClick={goHome}><span>⌂</span><small>Home</small></button>
-        <button className="create-fab" onClick={() => setCurrentView('CREATE')} aria-label="Create tournament">＋</button>
+        <button className="create-fab" onClick={() => setCurrentView(session ? 'CREATE' : 'AUTH')} aria-label="Create tournament">＋</button>
         <button className={currentView === 'PROFILE' || currentView === 'AUTH' ? 'active' : ''} onClick={() => setCurrentView(session ? 'PROFILE' : 'AUTH')}><span>◯</span><small>Profile</small></button>
       </nav>
     </main>
