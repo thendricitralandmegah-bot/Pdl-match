@@ -1,590 +1,361 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowUpRight,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  CircleUserRound,
+  Clock3,
+  Filter,
+  Gauge,
+  MapPin,
+  Plus,
+  Settings,
+  Sparkles,
+  Trophy,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-const MATCH_TYPES = [
-  { title: 'Americano', desc: 'Rotasi individu dengan pasangan yang berganti.' },
-  { title: 'Mexicano', desc: 'Pairing menyesuaikan klasemen setiap ronde.' },
-  { title: 'Team Americano', desc: 'Tim tetap bertanding sepanjang turnamen.' },
-  { title: 'Mix Americano', desc: 'Rotasi pasangan campuran.' },
-  { title: 'Team Mexicano', desc: 'Tim tetap dengan pairing berbasis klasemen.' }
+const imageSet = {
+  mark: '/pdlup-mark.webp',
+  hero: '/pdlup-hero-court.webp',
+  rally: '/pdlup-rally-detail.webp',
+  clubhouse: '/pdlup-clubhouse.webp',
+};
+
+const filterOptions = ['All', 'Active', 'Past'];
+const starterTournaments = [
+  {
+    id: 'starter-1',
+    name: 'Friday Night Rally',
+    date: 'Fri, 06 Sep',
+    time: '19:00 – 21:00',
+    location: 'Padel Haus Kemang',
+    players: 12,
+    maxPlayers: 16,
+    level: 'Intermediate',
+    status: 'Active',
+    featured: true,
+    image: imageSet.hero,
+    host: 'Raka Pratama',
+    rounds: '04 rounds',
+  },
+  {
+    id: 'starter-2',
+    name: 'Sunday Social Club',
+    date: 'Sun, 08 Sep',
+    time: '09:00 – 11:00',
+    location: 'The Padel Court BSD',
+    players: 8,
+    maxPlayers: 12,
+    level: 'Beginner friendly',
+    status: 'Active',
+    image: imageSet.clubhouse,
+    host: 'Nadia Sari',
+    rounds: '03 rounds',
+  },
+  {
+    id: 'starter-3',
+    name: 'Afterwork Americano',
+    date: 'Thu, 29 Aug',
+    time: '18:30 – 20:30',
+    location: 'Urban Padel Senopati',
+    players: 16,
+    maxPlayers: 16,
+    level: 'Intermediate',
+    status: 'Past',
+    image: imageSet.rally,
+    host: 'Bagas Wibowo',
+    rounds: '05 rounds',
+  },
 ];
 
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+function formatDate(value) {
+  if (!value) return 'Date to be confirmed';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', day: '2-digit', month: 'short' }).format(date);
+}
 
-function normalizeTournament(tournament) {
-  const totalRounds = Number(tournament.total_rounds ?? tournament.totalRounds ?? 7);
-  const courts = Number(tournament.court_count ?? tournament.courts ?? 1);
+function formatTime(value) {
+  if (!value) return 'Time to be confirmed';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Time to be confirmed';
+  return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+}
+
+function normalizeTournament(row, index = 0) {
+  const isPast = /completed|past|cancelled/i.test(row.status || '');
+  const maxPlayers = Number(row.max_players ?? row.players_count ?? 16) || 16;
+  const players = Number(row.players_count ?? row.players ?? 0) || 0;
   return {
-    ...tournament,
-    id: tournament.id,
-    name: tournament.name || 'Ga',
-    matchType: tournament.match_type || tournament.matchType || 'Americano',
-    courts: courts > 0 ? courts : 1,
-    totalRounds: totalRounds > 0 ? totalRounds : 7,
-    playersCount: Number(tournament.players_count ?? tournament.playersCount ?? 6),
-    targetPoints: tournament.target_points || tournament.targetPoints || 21,
-    date: tournament.created_at ? new Date(tournament.created_at).toLocaleString() : '09/01/2026 6:00 PM',
-    status: tournament.status || 'Active'
+    id: row.id,
+    name: row.name || 'Untitled tournament',
+    date: formatDate(row.scheduled_at || row.created_at),
+    time: formatTime(row.scheduled_at || row.created_at),
+    location: row.location || 'Club location to be confirmed',
+    players,
+    maxPlayers,
+    level: row.level || row.format || row.match_type || 'Intermediate',
+    status: isPast ? 'Past' : 'Active',
+    image: [imageSet.hero, imageSet.clubhouse, imageSet.rally][index % 3],
+    host: 'You',
+    rounds: `${String(row.total_rounds || 4).padStart(2, '0')} rounds`,
   };
 }
 
-export default function PDLUPDualPanelApp() {
-  const [currentView, setCurrentView] = useState('TOURNAMENT_DETAIL'); // 'HOME' | 'CREATE' | 'TOURNAMENT_DETAIL' | 'PROFILE'
-  const [tournaments, setTournaments] = useState([]);
+function StatusPill({ status }) {
+  return (
+    <span className={`status-pill ${status === 'Active' ? 'status-active' : 'status-past'}`}>
+      <span className={`status-dot ${status === 'Active' ? 'dot-active' : 'dot-past'}`} />
+      {status}
+    </span>
+  );
+}
+
+function MetaItem({ icon: Icon, children }) {
+  return <span className="meta-item"><Icon className="meta-icon" strokeWidth={2.2} />{children}</span>;
+}
+
+function TournamentCard({ tournament, position, total, onOpen }) {
+  const spots = Math.max(0, tournament.maxPlayers - tournament.players);
+  return (
+    <button type="button" onClick={onOpen} className={`tournament-card ${tournament.featured ? 'tournament-featured' : ''}`}>
+      <div className={`tournament-image ${tournament.featured ? '' : 'tournament-image-muted'}`}>
+        <img src={tournament.image} alt="" />
+        <div className={`tournament-overlay ${tournament.featured ? 'overlay-dark' : 'overlay-light'}`} />
+      </div>
+      <div className={`tournament-card-content ${tournament.featured ? 'card-content-light' : 'card-content-dark'}`}>
+        <div className="card-topline"><StatusPill status={tournament.status} /><span className="card-index">{String(position).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
+        <div className="card-main">
+          <div className="card-level">{tournament.level}</div>
+          <h3>{tournament.name}</h3>
+          <div className="meta-row"><MetaItem icon={CalendarDays}>{tournament.date}</MetaItem><MetaItem icon={Clock3}>{tournament.time}</MetaItem><MetaItem icon={MapPin}>{tournament.location}</MetaItem></div>
+        </div>
+        <div className="card-footer">
+          <div><div className="footer-label">Players joined</div><div className="player-count"><strong>{tournament.players}</strong><span>/ {tournament.maxPlayers}</span>{spots > 0 && <em>{spots} spots left</em>}</div></div>
+          <span className="round-arrow"><ArrowUpRight className="h-4" /></span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function CreateTournamentModal({ onClose, onCreate }) {
+  const [name, setName] = useState('');
+  const [date, setDate] = useState('2026-09-13');
+  const [time, setTime] = useState('19:00');
+  const [location, setLocation] = useState('Padel Haus Kemang');
+  const [level, setLevel] = useState('Intermediate');
+  const [maxPlayers, setMaxPlayers] = useState('16');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    const created = await onCreate({
+      id: `local-${Date.now()}`,
+      name: name.trim(),
+      date: new Intl.DateTimeFormat('en-US', { weekday: 'short', day: '2-digit', month: 'short' }).format(new Date(`${date}T12:00:00`)),
+      time,
+      location,
+      players: 1,
+      maxPlayers: Number(maxPlayers),
+      level,
+      status: 'Active',
+      image: imageSet.rally,
+      host: 'You',
+      rounds: '04 rounds',
+      scheduledAt: `${date}T${time}:00`,
+    });
+    setSaving(false);
+    if (created) onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="create-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-heading"><div><div className="court-kicker">Build the next match</div><h2>Create tournament</h2><p>Set the basics. We’ll keep the roster and rounds easy to manage.</p></div><button type="button" onClick={onClose} className="close-button" aria-label="Close dialog"><X /></button></div>
+        <form onSubmit={submit} className="create-form">
+          <label><span>Tournament name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Saturday Rally Club" autoFocus /></label>
+          <div className="form-two-col"><label><span>Date</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label><span>Start time</span><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label></div>
+          <label><span>Club / location</span><input value={location} onChange={(event) => setLocation(event.target.value)} /></label>
+          <div className="form-two-col"><label><span>Player level</span><select value={level} onChange={(event) => setLevel(event.target.value)}><option>Beginner friendly</option><option>Intermediate</option><option>Advanced</option></select></label><label><span>Max players</span><select value={maxPlayers} onChange={(event) => setMaxPlayers(event.target.value)}><option value="8">8 players</option><option value="12">12 players</option><option value="16">16 players</option><option value="20">20 players</option></select></label></div>
+          <button type="submit" className="primary-action" disabled={saving}><Plus />{saving ? 'Saving tournament…' : 'Create tournament'}</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TournamentDetail({ tournament, onClose, onInvite }) {
+  const progress = `${Math.min(100, (tournament.players / tournament.maxPlayers) * 100)}%`;
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="detail-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="detail-cover"><img src={tournament.image} alt="" /><div className="detail-cover-gradient" /><button type="button" onClick={onClose} className="detail-close" aria-label="Close details"><X /></button><div className="detail-status"><StatusPill status={tournament.status} /></div></div>
+        <div className="detail-body"><div className="detail-heading"><div><div className="court-kicker">Tournament details</div><h2>{tournament.name}</h2></div><button type="button" onClick={onInvite} className="invite-action"><Users /> Invite players</button></div><div className="detail-meta"><MetaItem icon={CalendarDays}>{tournament.date}</MetaItem><MetaItem icon={Clock3}>{tournament.time}</MetaItem><MetaItem icon={MapPin}>{tournament.location}</MetaItem></div><div className="roster-progress"><div className="progress-top"><span>Roster progress</span><strong>{tournament.players} / {tournament.maxPlayers}</strong></div><div className="progress-track"><div style={{ width: progress }} /></div><p>{tournament.maxPlayers - tournament.players > 0 ? `${tournament.maxPlayers - tournament.players} places still open for this session.` : 'The roster is full. Time to get your rackets ready.'}</p></div><div className="detail-footer"><span>Hosted by <strong>{tournament.host}</strong></span><span>{tournament.rounds}</span></div></div>
+      </div>
+    </div>
+  );
+}
+
+function ProfilePanel({ session, authMode, setAuthMode, email, setEmail, password, setPassword, message, onSubmit, onSignOut }) {
+  if (session) {
+    return <section className="profile-panel"><div className="profile-mark"><img src={imageSet.mark} alt="PDLUP" /></div><div className="court-kicker">Your player profile</div><h2>You’re in.</h2><p className="profile-email">{session.user.email}</p><div className="profile-stat-row"><div><strong>04</strong><span>Matches</span></div><div><strong>01</strong><span>Groups</span></div><div><strong>94%</strong><span>Balance</span></div></div><button type="button" className="secondary-action full-width" onClick={onSignOut}>Sign out</button></section>;
+  }
+  return <section className="profile-panel auth-panel"><div className="court-kicker">Your next rally starts here</div><h2>{authMode === 'signup' ? 'Create your account' : 'Sign in to PDLUP'}</h2><p>Save tournaments, rosters, and match scores across devices.</p><form onSubmit={onSubmit} className="auth-form"><label><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></label><label><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} /></label><button type="submit" className="primary-action">{authMode === 'signup' ? 'Create account' : 'Sign in'}</button>{message && <div className="auth-message">{message}</div>}</form><button type="button" className="text-action" onClick={() => setAuthMode(authMode === 'signup' ? 'signin' : 'signup')}>{authMode === 'signup' ? 'Already have an account? Sign in' : 'New to PDLUP? Create an account'}</button></section>;
+}
+
+export default function Home() {
+  const [filter, setFilter] = useState('All');
+  const [tournaments, setTournaments] = useState(starterTournaments);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedTournament, setSelectedTournament] = useState(null);
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(Boolean(supabase));
   const [authMode, setAuthMode] = useState('signin');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authMessage, setAuthMessage] = useState('');
+  const [notice, setNotice] = useState('');
   const [dataError, setDataError] = useState('');
-  const [activeTournament, setActiveTournament] = useState({
-    id: 'local-1',
-    name: 'Ga',
-    matchType: 'Americano',
-    courts: 1,
-    totalRounds: 7,
-    playersCount: 6,
-    targetPoints: 21,
-    date: '09/01/2026 6:00 PM'
-  });
-
-  const [activeRound, setActiveRound] = useState(1);
-  const [playersList, setPlayersList] = useState(['A', 'Aa', 'Aaa', 'Aaa(1)', 'Aaa(2)', 'Aaaa']);
-
-  // Leaderboard State (Sesuai Kolom Screenshot PDLUP)
-  const [leaderboard, setLeaderboard] = useState([
-    { id: '1', rank: 1, name: 'A', g: 0, wlt: '0-0-0', diff: 0, bonus: 0, pts: 0 },
-    { id: '2', rank: 2, name: 'Aa', g: 0, wlt: '0-0-0', diff: 0, bonus: 0, pts: 0 },
-    { id: '3', rank: 3, name: 'Aaa', g: 0, wlt: '0-0-0', diff: 0, bonus: 0, pts: 0 },
-    { id: '4', rank: 4, name: 'Aaa(1)', g: 0, wlt: '0-0-0', diff: 0, bonus: 0, pts: 0 },
-    { id: '5', rank: 5, name: 'Aaa(2)', g: 0, wlt: '0-0-0', diff: 0, bonus: 0, pts: 0 },
-    { id: '6', rank: 6, name: 'Aaaa', g: 0, wlt: '0-0-0', diff: 0, bonus: 0, pts: 0 },
-  ]);
-
-  // Matches State (Sesuai Card Match Box Skor 00 00 & Rest Players PDLUP)
-  const [roundsMatches, setRoundsMatches] = useState({
-    1: {
-      court: 'Court 1',
-      teamA: ['Aa', 'Aaa'],
-      teamB: ['Aaa(2)', 'A'],
-      scoreA: '00',
-      scoreB: '00',
-      restPlayers: ['Aaa(1)', 'Aaaa'],
-      submitted: false
-    },
-    2: {
-      court: 'Court 1',
-      teamA: ['A', 'Aaa(1)'],
-      teamB: ['Aa', 'Aaaa'],
-      scoreA: '00',
-      scoreB: '00',
-      restPlayers: ['Aaa', 'Aaa(2)'],
-      submitted: false
-    },
-    3: {
-      court: 'Court 1',
-      teamA: ['Aaa', 'Aaaa'],
-      teamB: ['Aaa(1)', 'Aaa(2)'],
-      scoreA: '00',
-      scoreB: '00',
-      restPlayers: ['A', 'Aa'],
-      submitted: false
-    }
-  });
-
-  // Form Create State
-  const [formName, setFormName] = useState('');
-  const [formMatchType, setFormMatchType] = useState('Americano');
-  const [formCourts, setFormCourts] = useState(1);
-  const [formRounds, setFormRounds] = useState(7);
-  const [formPoints, setFormPoints] = useState('21');
-  const [playerInput, setPlayerInput] = useState('');
 
   useEffect(() => {
     if (!supabase) {
       setAuthLoading(false);
       return undefined;
     }
-
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
       setSession(data.session);
       setAuthLoading(false);
     });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setAuthLoading(false);
     });
-
     return () => {
       mounted = false;
-      authListener.subscription.unsubscribe();
+      listener.subscription.unsubscribe();
     };
   }, []);
 
   useEffect(() => {
-    if (!supabase || !session?.user?.id) return undefined;
-
+    if (!session || !supabase) {
+      setTournaments(starterTournaments);
+      return undefined;
+    }
     let cancelled = false;
     const loadTournaments = async () => {
-      const { data, error } = await supabase
-        .from('tournaments')
-        .select('*')
-        .eq('owner_id', session.user.id)
-        .order('created_at', { ascending: false });
-
+      const { data, error } = await supabase.from('tournaments').select('*').eq('owner_id', session.user.id).order('created_at', { ascending: false });
       if (cancelled) return;
       if (error) {
         setDataError(error.message);
         return;
       }
-
       setDataError('');
-      const normalized = (data || []).map(normalizeTournament);
-      setTournaments(normalized);
-      if (normalized[0]) setActiveTournament(normalized[0]);
+      setTournaments((data || []).map((row, index) => normalizeTournament(row, index)));
     };
-
     loadTournaments();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [session]);
 
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
+  const visibleTournaments = useMemo(() => filter === 'All' ? tournaments : tournaments.filter((tournament) => tournament.status === filter), [filter, tournaments]);
+  const activeCount = tournaments.filter((tournament) => tournament.status === 'Active').length;
+  const joinedCount = tournaments.reduce((sum, tournament) => sum + tournament.players, 0);
+
+  const showNotice = (message) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(''), 2600);
+  };
+
+  const handleAuthSubmit = async (event) => {
+    event.preventDefault();
     setAuthMessage('');
     if (!supabase) {
-      setAuthMessage('Supabase belum terhubung. Periksa environment variables di Vercel.');
+      setAuthMessage('Supabase is not configured on this deployment yet.');
       return;
     }
-    if (!authEmail || !authPassword) {
-      setAuthMessage('Masukkan email dan password terlebih dahulu.');
-      return;
-    }
-
     const result = authMode === 'signup'
       ? await supabase.auth.signUp({ email: authEmail, password: authPassword, options: { data: { display_name: authEmail.split('@')[0] } } })
       : await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
-
     if (result.error) {
       setAuthMessage(result.error.message);
       return;
     }
-
-    setSession(result.data.session);
-    setAuthMessage(authMode === 'signup' ? 'Akun dibuat. Cek email Anda jika verifikasi email aktif.' : 'Login berhasil.');
-    if (result.data.session) setCurrentView('HOME');
+    if (result.data.session) {
+      setSession(result.data.session);
+      setAuthMessage('Login berhasil.');
+      showNotice('You are back in the rotation.');
+    } else {
+      setAuthMessage('Akun dibuat. Cek email Anda untuk verifikasi.');
+    }
   };
 
   const handleSignOut = async () => {
     if (supabase) await supabase.auth.signOut();
     setSession(null);
-    setTournaments([]);
-    setCurrentView('HOME');
+    setAuthMessage('');
+    showNotice('Signed out safely.');
   };
 
-  const currentMatch = roundsMatches[activeRound] || roundsMatches[1] || {
-    court: 'Court 1',
-    teamA: ['Player 1', 'Player 2'],
-    teamB: ['Player 3', 'Player 4'],
-    scoreA: '00',
-    scoreB: '00',
-    restPlayers: [],
-    submitted: false
-  };
-
-  // Score Input Change (Max 2 digit format 00)
-  const handleScoreChange = (team, value) => {
-    if (!/^\d*$/.test(value)) return;
-    const formatted = value.padStart(2, '0').slice(-2);
-    setRoundsMatches({
-      ...roundsMatches,
-      [activeRound]: {
-        ...currentMatch,
-        [team]: formatted
-      }
-    });
-  };
-
-  // Finish Match & Recalculate Leaderboard
-  const handleFinishMatch = async () => {
-    const sA = parseInt(currentMatch.scoreA) || 0;
-    const sB = parseInt(currentMatch.scoreB) || 0;
-
-    setRoundsMatches({
-      ...roundsMatches,
-      [activeRound]: {
-        ...currentMatch,
-        submitted: true
-      }
-    });
-
-    const teamANames = currentMatch.teamA;
-    const teamBNames = currentMatch.teamB;
-
-    setLeaderboard(prev => {
-      return prev.map(p => {
-        let newP = { ...p };
-        if (teamANames.includes(p.name)) {
-          newP.g += 1;
-          newP.pts += sA;
-          newP.diff += (sA - sB);
-          let [w, l, t] = newP.wlt.split('-').map(Number);
-          if (sA > sB) w += 1;
-          else if (sB > sA) l += 1;
-          else t += 1;
-          newP.wlt = `${w}-${l}-${t}`;
-        } else if (teamBNames.includes(p.name)) {
-          newP.g += 1;
-          newP.pts += sB;
-          newP.diff += (sB - sA);
-          let [w, l, t] = newP.wlt.split('-').map(Number);
-          if (sB > sA) w += 1;
-          else if (sA > sB) l += 1;
-          else t += 1;
-          newP.wlt = `${w}-${l}-${t}`;
-        }
-        return newP;
-      }).sort((a, b) => b.pts - a.pts || b.diff - a.diff);
-    });
-
-    if (supabase && session?.user?.id && activeTournament?.id && !String(activeTournament.id).startsWith('local-')) {
-      const { error } = await supabase
-        .from('matches')
-        .update({ score_a: sA, score_b: sB, is_completed: true, badge: `Round ${activeRound}` })
-        .eq('tournament_id', activeTournament.id)
-        .eq('round_number', activeRound);
-      if (error) setDataError(error.message);
+  const handleCreate = async (tournament) => {
+    if (!supabase || !session) {
+      setTournaments((current) => [tournament, ...current]);
+      showNotice('Tournament created locally. Sign in to sync it across devices.');
+      return true;
     }
-  };
-
-  // Submit Form Create Tournament
-  const handleCreateSubmit = async (e) => {
-    e.preventDefault();
-    if (playersList.length < 4) {
-      alert("Masukkan minimal 4 pemain!");
-      return;
+    const slugBase = tournament.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'tournament';
+    const { data, error } = await supabase.from('tournaments').insert({
+      owner_id: session.user.id,
+      name: tournament.name,
+      format: tournament.level,
+      court_count: 1,
+      match_type: 'Americano',
+      target_points: 21,
+      total_rounds: 4,
+      share_slug: `${slugBase}-${Date.now()}`,
+      status: 'Active',
+    }).select().single();
+    if (error) {
+      setDataError(error.message);
+      showNotice('Could not save tournament. Check the Supabase policy.');
+      return false;
     }
-
-    const tName = formName.trim() || 'Ga';
-    const localTourney = {
-      id: `local-${Date.now()}`,
-      name: tName,
-      matchType: formMatchType,
-      courts: formCourts,
-      totalRounds: formRounds,
-      playersCount: playersList.length,
-      targetPoints: formPoints,
-      date: '09/01/2026 6:00 PM'
-    };
-    let newTourney = localTourney;
-
-    if (supabase && session?.user?.id) {
-      const { data, error } = await supabase
-        .from('tournaments')
-        .insert({
-          owner_id: session.user.id,
-          name: tName,
-          format: formMatchType,
-          court_count: formCourts,
-          match_type: formMatchType,
-          target_points: Number(formPoints),
-          total_rounds: formRounds,
-          share_slug: `${tName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now()}`,
-          status: 'Active'
-        })
-        .select()
-        .single();
-
-      if (error) {
-        setDataError(error.message);
-        return;
-      }
-      newTourney = normalizeTournament(data);
-      setTournaments(prev => [newTourney, ...prev]);
-    }
-
-    const newLeaderboard = playersList.map((name, idx) => ({
-      id: `p-${idx}`,
-      rank: idx + 1,
-      name,
-      g: 0,
-      wlt: '0-0-0',
-      diff: 0,
-      bonus: 0,
-      pts: 0
-    }));
-
-    setActiveTournament(newTourney);
-    if (!supabase || !session?.user?.id) setTournaments(prev => [normalizeTournament(newTourney), ...prev]);
-    setLeaderboard(newLeaderboard);
-    setActiveRound(1);
-    setCurrentView('TOURNAMENT_DETAIL');
+    const saved = { ...tournament, id: data.id };
+    setTournaments((current) => [saved, ...current]);
+    showNotice('Tournament created and synced.');
+    return true;
   };
 
   return (
-    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1f2937' }}>
-      
-      {/* 1. HEADER BAR BLUE PDLUP */}
-      <header style={{ backgroundColor: '#2563eb', color: '#ffffff', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setCurrentView('HOME')}>
-          <span style={{ fontSize: '18px' }}>←</span>
-          <div style={{ backgroundColor: '#ffffff', color: '#2563eb', padding: '4px 6px', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold' }}>📍</div>
-          <span style={{ fontSize: '16px', fontWeight: 'bold', letterSpacing: '-0.5px' }}>PDLUP - Padel Matchmaker</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {authLoading ? (
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,.75)' }}>Checking session…</span>
-          ) : session ? (
-            <button onClick={handleSignOut} style={{ backgroundColor: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.25)', color: '#ffffff', padding: '7px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>{session.user.email}</button>
-          ) : (
-            <button onClick={() => setCurrentView('PROFILE')} style={{ backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,.35)', color: '#ffffff', padding: '7px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>Sign in</button>
-          )}
-          <button style={{ backgroundColor: 'transparent', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}>⚙️</button>
-        </div>
+    <div className="app-shell">
+      <header className="site-header">
+        <div className="header-orbit orbit-one" /><div className="header-orbit orbit-two" />
+        <div className="container header-inner"><button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="brand-button"><span className="brand-mark"><img src={imageSet.mark} alt="PDLUP" /></span><span><strong>PDLUP</strong><small>Padel matchmaker</small></span></button><div className="header-actions">{authLoading ? <span className="session-check">Checking session…</span> : session ? <button type="button" onClick={() => showNotice('Tap Profile below to manage your account.')} className="account-button">{session.user.email}</button> : <button type="button" onClick={() => { setAuthMessage(''); setAuthMode('signin'); document.getElementById('profile')?.scrollIntoView({ behavior: 'smooth' }); }} className="header-signin">Sign in</button>}<button type="button" onClick={() => showNotice('Settings are queued for the next rally.')} className="settings-button" aria-label="Settings"><Settings /></button></div></div>
+        <div className="container hero-content"><div className="hero-grid"><div className="hero-copy reveal-up"><div className="welcome-label"><span /> Welcome back</div><h1>Your next<br className="desktop-break" /> rally starts here<span>.</span></h1><p>Create balanced matches, track scores, and keep the group moving.</p><div className="hero-actions"><button type="button" onClick={() => setShowCreate(true)} className="hero-primary"><Plus /> Create tournament</button><button type="button" onClick={() => document.getElementById('tournaments')?.scrollIntoView({ behavior: 'smooth' })} className="hero-secondary">Browse matches <ArrowUpRight /></button></div></div><div className="hero-visual reveal-up reveal-delay-2"><div className="hero-photo"><img src={imageSet.hero} alt="Players on a padel court" /><div /></div><div className="community-pulse"><span><Zap /></span><span><small>Community pulse</small><strong>{joinedCount} players in rotation</strong></span></div></div></div></div>
       </header>
 
-      {/* 2. SUB-HEADER METADATA */}
-      {currentView === 'TOURNAMENT_DETAIL' && activeTournament && (
-        <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e5e7eb', padding: '12px 24px' }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#2563eb' }}>🏆</span> {activeTournament.name}
-              </h1>
-              <div style={{ display: 'flex', gap: '12px', color: '#6b7280', fontSize: '16px' }}>
-                <span style={{ cursor: 'pointer' }} onClick={() => alert("Share link copied!")}>🔗</span>
-                <span style={{ cursor: 'pointer' }}>⋮</span>
-              </div>
-            </div>
+      <main className="container main-content">
+        <section className="stats-grid reveal-up reveal-delay-1"><div className="stat-card"><div><span>Active tournaments</span><Trophy /></div><strong>{activeCount}</strong><p>Open for your next session</p></div><div className="stat-card"><div><span>Players in rotation</span><Users /></div><strong>{joinedCount}</strong><p>Across your current groups</p></div><div className="stat-card stat-card-lime"><div><span>Match balance</span><Gauge /></div><strong>94<small>%</small></strong><p>Average group satisfaction</p></div></section>
+        <section id="tournaments" className="tournaments-section"><div className="section-heading"><div><div className="court-kicker">Your playbook</div><h2>Tournaments in your orbit<span>.</span></h2></div><div className="filter-group"><span>Filter by</span><div className="filter-control"><Filter />{filterOptions.map((option) => <button type="button" key={option} onClick={() => setFilter(option)} className={filter === option ? 'filter-selected' : ''}>{option}</button>)}</div></div></div><div className="tournament-grid">{visibleTournaments.map((tournament, index) => <div key={tournament.id} className={`reveal-up ${index === 1 ? 'reveal-delay-1' : index === 2 ? 'reveal-delay-2' : ''}`}><TournamentCard tournament={tournament} position={index + 1} total={visibleTournaments.length} onOpen={() => setSelectedTournament(tournament)} /></div>)}</div>{visibleTournaments.length === 0 && <div className="empty-state"><Sparkles /><h3>No matches in this lane yet.</h3><p>Create a tournament and give your group a reason to pick up their rackets.</p><button type="button" onClick={() => setShowCreate(true)} className="primary-action inline-action"><Plus /> Create one</button></div>}</section>
+        <section className="ritual-section"><div><div className="court-kicker">Small rituals, better rallies</div><h2>A better match starts before the first serve<span>.</span></h2><p>PDLUP keeps the boring parts moving in the background, so your group can focus on showing up and playing well.</p><button type="button" onClick={() => showNotice('Match insights are queued for the next rally.')} className="link-action">See how it works <ChevronRight /></button></div><div className="signal-card"><div className="signal-inner"><div className="signal-top"><span><Zap /></span><div><small>Your group signal</small><strong>4 players are ready to rally this week.</strong></div></div><div className="signal-bottom"><div><strong>02:14</strong><span>Average time to fill a match</span></div><em>On track</em></div></div></div></section>
+        <section id="profile" className="profile-section"><ProfilePanel session={session} authMode={authMode} setAuthMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} message={authMessage} onSubmit={handleAuthSubmit} onSignOut={handleSignOut} /></section>
+        {dataError && <div className="error-banner">Supabase: {dataError}</div>}
+      </main>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '12px', color: '#4b5563', fontWeight: '500' }}>
-              <span>📋 {activeTournament.matchType}</span>
-              <span>📅 {activeTournament.date}</span>
-              <span>🎯 {activeTournament.targetPoints} Points</span>
-              <span>👥 {activeTournament.playersCount} Players</span>
-              <span>🔄 {activeTournament.totalRounds} Rounds</span>
-              <span>🎾 {activeTournament.courts} Courts</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. DUAL-PANEL SPLIT VIEW (EXACT MATCH SCREENSHOT APP.PDLUP.COM) */}
-      {currentView === 'TOURNAMENT_DETAIL' && (
-        <main style={{ maxWidth: '1200px', margin: '20px auto', padding: '0 16px', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '24px' }}>
-          
-          {/* LEFT PANEL: LEADERBOARD TABLE */}
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#2563eb' }}>📊</span> Leaderboard
-              </h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button style={{ backgroundColor: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer' }}>👤+</button>
-                <button style={{ backgroundColor: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer' }}>⋮</button>
-              </div>
-            </div>
-
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #e5e7eb', color: '#6b7280', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 4px' }}>👁 BY POINTS ▼</th>
-                  <th style={{ padding: '8px 4px', textAlign: 'center' }}>G</th>
-                  <th style={{ padding: '8px 4px', textAlign: 'center' }}>W-L-T</th>
-                  <th style={{ padding: '8px 4px', textAlign: 'center' }}>DIFF</th>
-                  <th style={{ padding: '8px 4px', textAlign: 'center' }}>+M</th>
-                  <th style={{ padding: '8px 4px', textAlign: 'center' }}>P</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaderboard.map((row, idx) => (
-                  <tr key={row.id || idx} style={{ borderBottom: '1px solid #f9fafb' }}>
-                    <td style={{ padding: '10px 4px', fontWeight: 'bold', color: '#111827' }}>
-                      <span style={{ color: '#9ca3af', marginRight: '6px' }}>⋮</span> {idx + 1}. {row.name}
-                    </td>
-                    <td style={{ padding: '10px 4px', textAlign: 'center', color: '#4b5563' }}>{row.g}</td>
-                    <td style={{ padding: '10px 4px', textAlign: 'center', color: '#16a34a', fontWeight: 'bold' }}>{row.wlt}</td>
-                    <td style={{ padding: '10px 4px', textAlign: 'center', color: '#4b5563' }}>{row.diff}</td>
-                    <td style={{ padding: '10px 4px', textAlign: 'center', color: '#4b5563' }}>{row.bonus}</td>
-                    <td style={{ padding: '10px 4px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{row.pts}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #f3f4f6', fontSize: '10px', color: '#9ca3af', lineHeight: '1.6' }}>
-              <div>W-L-T = Win - Losses - Ties</div>
-              <div>WR = Win Rate</div>
-              <div>DIFF = Point Difference</div>
-              <div>+M = Compensation points for fewer matches played</div>
-              <div>P = Points</div>
-              <div>G = Game Played (Missed match)</div>
-            </div>
-          </div>
-
-          {/* RIGHT PANEL: MATCH ROUNDS & SCORING */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#2563eb' }}>🎾</span> Match Rounds
-              </h2>
-              <button style={{ backgroundColor: 'transparent', border: 'none', color: '#6b7280', fontSize: '16px', cursor: 'pointer' }}>📑</button>
-            </div>
-
-            {/* Horizontal Round Tabs Bar (1, 2, 3, 4, 5, 6, 7) */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
-              {Array.from({ length: activeTournament.totalRounds }, (_, i) => i + 1).map(rNum => (
-                <button
-                  key={rNum}
-                  onClick={() => setActiveRound(rNum)}
-                  style={{
-                    minWidth: '42px',
-                    height: '42px',
-                    borderRadius: '8px',
-                    border: activeRound === rNum ? 'none' : '1px solid #d1d5db',
-                    backgroundColor: activeRound === rNum ? '#2563eb' : '#ffffff',
-                    color: activeRound === rNum ? '#ffffff' : '#374151',
-                    fontWeight: 'bold',
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                    boxShadow: activeRound === rNum ? '0 2px 4px rgba(37,99,235,0.3)' : 'none'
-                  }}>
-                  {rNum}
-                </button>
-              ))}
-            </div>
-
-            {/* Active Match Round Card */}
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
-              
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Round #{activeRound}</h3>
-                <button style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', color: '#4b5563' }}>›</button>
-              </div>
-
-              {/* Exact PDLUP Score Card Box */}
-              <div style={{ border: '1px solid #e5e7eb', borderRadius: '14px', padding: '20px', position: 'relative', marginBottom: '20px', backgroundColor: '#ffffff' }}>
-                
-                <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '11px', color: '#6b7280', backgroundColor: '#f3f4f6', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                  {currentMatch.court} ✏️
-                </span>
-
-                {/* Score Black Box 00 00 */}
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                  <input 
-                    type="text"
-                    maxLength={2}
-                    value={currentMatch.scoreA}
-                    onChange={(e) => handleScoreChange('scoreA', e.target.value)}
-                    style={{ width: '54px', height: '54px', backgroundColor: '#000000', color: '#ffffff', borderRadius: '10px', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', border: 'none', outline: 'none' }}
-                  />
-                  <input 
-                    type="text"
-                    maxLength={2}
-                    value={currentMatch.scoreB}
-                    onChange={(e) => handleScoreChange('scoreB', e.target.value)}
-                    style={{ width: '54px', height: '54px', backgroundColor: '#000000', color: '#ffffff', borderRadius: '10px', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', border: 'none', outline: 'none' }}
-                  />
-                </div>
-
-                {/* Team Left vs Team Right */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', textAlign: 'left', fontSize: '13px', fontWeight: 'bold', color: '#111827', gap: '12px' }}>
-                  <div>
-                    <div>{currentMatch.teamA[0]}</div>
-                    <div>{currentMatch.teamA[1]}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div>{currentMatch.teamB[0]}</div>
-                    <div>{currentMatch.teamB[1]}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rest Players Box */}
-              <div style={{ backgroundColor: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '10px', padding: '12px', textAlign: 'left', fontSize: '12px', color: '#4b5563', marginBottom: '24px' }}>
-                <span style={{ fontWeight: 'bold', color: '#111827' }}>Rest Players: </span> 
-                {currentMatch.restPlayers && currentMatch.restPlayers.length > 0 ? currentMatch.restPlayers.join(', ') : 'None'}
-              </div>
-
-              {/* Finish & Reshuffle Action Buttons */}
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button 
-                  onClick={handleFinishMatch}
-                  style={{ flex: 1, backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
-                  🚩 Finish
-                </button>
-                <button 
-                  onClick={() => alert("Jadwal round berhasil di-reshuffle!")}
-                  style={{ flex: 1, backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '12px', borderRadius: '10px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
-                  🔀 Reshuffle
-                </button>
-              </div>
-
-            </div>
-          </div>
-
-        </main>
-      )}
-
-      {dataError && (
-        <div style={{ maxWidth: '1200px', margin: '0 auto 20px', padding: '12px 16px', color: '#991b1b', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '12px' }}>
-          Supabase: {dataError}
-        </div>
-      )}
-
-      {/* AUTH / PROFILE VIEW */}
-      {currentView === 'PROFILE' && (
-        <div style={{ maxWidth: '460px', margin: '24px auto 90px', padding: '28px 24px', border: '1px solid #e5e7eb', borderRadius: '18px', backgroundColor: '#ffffff', boxShadow: '0 8px 24px rgba(15,23,42,.06)' }}>
-          {session ? (
-            <div style={{ textAlign: 'center' }}>
-              <div className="auth-mark" style={{ display: 'grid', width: '48px', height: '48px', margin: '0 auto 16px', placeItems: 'center', borderRadius: '14px', color: '#ffffff', backgroundColor: '#2563eb', fontWeight: '800', fontSize: '22px' }}>P</div>
-              <h2 style={{ margin: '0 0 8px', fontSize: '26px', color: '#111827' }}>You’re in.</h2>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>{session.user.email}</p>
-              <button onClick={handleSignOut} style={{ width: '100%', marginTop: '24px', padding: '12px', border: 0, borderRadius: '10px', color: '#ffffff', backgroundColor: '#2563eb', fontWeight: '800', cursor: 'pointer' }}>Sign out</button>
-            </div>
-          ) : (
-            <form onSubmit={handleAuthSubmit}>
-              <div className="court-kicker" style={{ color: '#2563eb', fontSize: '10px', fontWeight: '800', letterSpacing: '.16em', textTransform: 'uppercase' }}>Your next rally starts here</div>
-              <h2 style={{ margin: '8px 0', fontSize: '26px', color: '#111827' }}>{authMode === 'signup' ? 'Create your account' : 'Sign in to PDLUP'}</h2>
-              <p style={{ margin: '0 0 22px', color: '#64748b', fontSize: '13px', lineHeight: '1.6' }}>Save tournaments, rosters, and match scores across devices.</p>
-              <label style={{ display: 'block', marginBottom: '14px', color: '#334155', fontSize: '11px', fontWeight: '800' }}>EMAIL<input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@example.com" style={{ display: 'block', width: '100%', marginTop: '7px', padding: '11px 12px', border: '1px solid #dbe3ef', borderRadius: '9px', boxSizing: 'border-box' }} /></label>
-              <label style={{ display: 'block', marginBottom: '14px', color: '#334155', fontSize: '11px', fontWeight: '800' }}>PASSWORD<input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="At least 6 characters" style={{ display: 'block', width: '100%', marginTop: '7px', padding: '11px 12px', border: '1px solid #dbe3ef', borderRadius: '9px', boxSizing: 'border-box' }} /></label>
-              <button type="submit" style={{ width: '100%', padding: '12px', border: 0, borderRadius: '10px', color: '#ffffff', backgroundColor: '#2563eb', fontWeight: '800', cursor: 'pointer' }}>{authMode === 'signup' ? 'Create account' : 'Sign in'}</button>
-              {authMessage && <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '9px', color: '#1d4ed8', backgroundColor: '#eff6ff', fontSize: '12px', lineHeight: '1.5' }}>{authMessage}</div>}
-              <button type="button" onClick={() => { setAuthMode(authMode === 'signup' ? 'signin' : 'signup'); setAuthMessage(''); }} style={{ width: '100%', marginTop: '15px', border: 0, color: '#2563eb', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }}>{authMode === 'signup' ? 'Already have an account? Sign in' : 'New to PDLUP? Create an account'}</button>
-            </form>
-          )}
-        </div>
-      )}
-
-      {/* CREATE TOURNAMENT VIEW */}
-      {currentView === 'CREATE' && (
-        <div style={{ maxWidth: '600px', margin: '20px auto', padding: '20px', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#2563eb', marginBottom: '16px' }}>🏆 Create Tournament</h2>
-          <form onSubmit={handleCreateSubmit}>
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Name</label>
-              <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Ga" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #d1d5db' }} />
-            </div>
-            <button type="submit" style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold' }}>Create</button>
-          </form>
-        </div>
-      )}
-
-      {/* BOTTOM NAVIGATION BAR */}
-      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '1px solid #e5e7eb', padding: '8px 0', display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 50 }}>
-        <button onClick={() => setCurrentView('TOURNAMENT_DETAIL')} style={{ backgroundColor: 'transparent', border: 'none', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>🏠 Home</button>
-        <button onClick={() => setCurrentView('CREATE')} style={{ backgroundColor: '#2563eb', border: 'none', color: '#ffffff', width: '40px', height: '40px', borderRadius: '50%', fontWeight: 'bold', fontSize: '20px', cursor: 'pointer', marginTop: '-15px' }}>＋</button>
-        <button onClick={() => setCurrentView('PROFILE')} style={{ backgroundColor: 'transparent', border: 'none', color: '#6b7280', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>👤 Profile</button>
-      </nav>
-
+      <nav className="bottom-nav"><div className="container bottom-nav-inner"><button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="nav-item nav-active"><span><Zap /></span><small>Home</small></button><button type="button" onClick={() => setShowCreate(true)} className="create-fab" aria-label="Create tournament"><Plus /></button><button type="button" onClick={() => document.getElementById('profile')?.scrollIntoView({ behavior: 'smooth' })} className="nav-item"><span><CircleUserRound /></span><small>Profile</small></button></div></nav>
+      {showCreate && <CreateTournamentModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
+      {selectedTournament && <TournamentDetail tournament={selectedTournament} onClose={() => setSelectedTournament(null)} onInvite={() => showNotice('Invite link copied to clipboard.')} />}
+      {notice && <div className="toast-notice"><Check /> {notice}</div>}
     </div>
   );
 }
