@@ -206,18 +206,111 @@ function getTeamNames(team) {
   return Array.isArray(team) ? team.map((player) => typeof player === 'string' ? player : player?.name).filter(Boolean) : [];
 }
 
-function buildRoundPairings(players, round, courtCount) {
-  const roster = players.filter((player) => player?.id && player?.name);
-  if (roster.length < 4) return { pairings: [], waiting: roster.length };
-  const rotation = roster.map((_, index) => roster[(index + round - 1) % roster.length]);
-  const pairings = [];
-  for (let index = 0; index + 3 < rotation.length && pairings.length < courtCount; index += 4) {
-    pairings.push({
-      teamA: rotation.slice(index, index + 2),
-      teamB: rotation.slice(index + 2, index + 4),
+function getPlayerId(player) {
+  return typeof player === 'string' ? player : player?.id;
+}
+
+function pairKey(first, second) {
+  return [first, second].sort().join('::');
+}
+
+function buildPairingHistory(matches, roster) {
+  const history = { partners: new Map(), opponents: new Map(), played: new Map(), byes: new Map(), courts: new Map() };
+  const roundPlayers = new Map();
+  const increment = (map, key, amount = 1) => map.set(key, (map.get(key) || 0) + amount);
+  matches.forEach((match) => {
+    const teamA = (Array.isArray(match.team_a) ? match.team_a : []).map(getPlayerId).filter(Boolean);
+    const teamB = (Array.isArray(match.team_b) ? match.team_b : []).map(getPlayerId).filter(Boolean);
+    const allPlayers = [...teamA, ...teamB];
+    const roundRoster = roundPlayers.get(match.round_number) || new Set();
+    allPlayers.forEach((playerId) => roundRoster.add(playerId));
+    roundPlayers.set(match.round_number, roundRoster);
+    allPlayers.forEach((playerId) => {
+      increment(history.played, playerId);
+      increment(history.courts, `${playerId}::${match.court_number}`);
     });
+    for (let index = 0; index < teamA.length; index += 1) {
+      for (let next = index + 1; next < teamA.length; next += 1) increment(history.partners, pairKey(teamA[index], teamA[next]));
+    }
+    for (let index = 0; index < teamB.length; index += 1) {
+      for (let next = index + 1; next < teamB.length; next += 1) increment(history.partners, pairKey(teamB[index], teamB[next]));
+    }
+    teamA.forEach((first) => teamB.forEach((second) => increment(history.opponents, pairKey(first, second))));
+  });
+  roundPlayers.forEach((roundRoster) => roster.forEach((player) => {
+    if (!roundRoster.has(player.id)) increment(history.byes, player.id);
+  }));
+  return history;
+}
+
+function scorePairingCandidate(groups, history, courts) {
+  let cost = 0;
+  const participating = groups.flatMap((group) => [...group.teamA, ...group.teamB]);
+  const playCounts = participating.map((player) => history.played.get(player.id) || 0);
+  const byeCounts = participating.map((player) => history.byes.get(player.id) || 0);
+  const minPlayed = playCounts.length ? Math.min(...playCounts) : 0;
+  const maxPlayed = playCounts.length ? Math.max(...playCounts) : 0;
+  const minByes = byeCounts.length ? Math.min(...byeCounts) : 0;
+  const maxByes = byeCounts.length ? Math.max(...byeCounts) : 0;
+  cost += (maxPlayed - minPlayed) * 35;
+  cost += (maxByes - minByes) * 25;
+  groups.forEach((group, groupIndex) => {
+    const court = courts[groupIndex];
+    const teams = [group.teamA, group.teamB];
+    teams.forEach((team) => {
+      for (let index = 0; index < team.length; index += 1) {
+        for (let next = index + 1; next < team.length; next += 1) {
+          cost += (history.partners.get(pairKey(team[index].id, team[next].id)) || 0) * 100;
+        }
+      }
+    });
+    group.teamA.forEach((first) => group.teamB.forEach((second) => {
+      cost += (history.opponents.get(pairKey(first.id, second.id)) || 0) * 60;
+    }));
+    [...group.teamA, ...group.teamB].forEach((player) => {
+      cost += (history.courts.get(`${player.id}::${court}`) || 0) * 10;
+    });
+  });
+  return cost;
+}
+
+function buildRoundPairings(players, round, courtCount, matches = []) {
+  const roster = players.filter((player) => player?.id && player?.name);
+  if (roster.length < 4) return { pairings: [], waiting: roster.length, cost: 0 };
+  const history = buildPairingHistory(matches, roster);
+  const maxPlayers = Math.min(roster.length, courtCount * 4);
+  const eligible = [...roster].sort((first, second) => {
+    const playDelta = (history.played.get(first.id) || 0) - (history.played.get(second.id) || 0);
+    const byeDelta = (history.byes.get(second.id) || 0) - (history.byes.get(first.id) || 0);
+    return playDelta || byeDelta || String(first.id).localeCompare(String(second.id));
+  }).slice(0, maxPlayers);
+  const candidates = [];
+  const addCandidate = (ordered) => {
+    const groups = [];
+    for (let index = 0; index + 3 < ordered.length; index += 4) {
+      groups.push({ teamA: ordered.slice(index, index + 2), teamB: ordered.slice(index + 2, index + 4) });
+    }
+    if (groups.length) candidates.push(groups);
+  };
+  for (let offset = 0; offset < eligible.length; offset += 1) {
+    const rotated = eligible.map((_, index) => eligible[(index + offset + round - 1) % eligible.length]);
+    addCandidate(rotated);
+    addCandidate([...rotated].reverse());
+    addCandidate(rotated.filter((_, index) => index % 2 === 0).concat(rotated.filter((_, index) => index % 2 === 1)));
   }
-  return { pairings, waiting: Math.max(0, roster.length - pairings.length * 4) };
+  const courts = Array.from({ length: courtCount }, (_, index) => index + 1);
+  let best = candidates[0];
+  let bestCost = Number.POSITIVE_INFINITY;
+  candidates.forEach((candidate) => {
+    const cost = scorePairingCandidate(candidate, history, courts);
+    const signature = candidate.flatMap((group) => [...group.teamA, ...group.teamB].map((player) => player.id)).join('|');
+    const bestSignature = best?.flatMap((group) => [...group.teamA, ...group.teamB].map((player) => player.id)).join('|') || '';
+    if (cost < bestCost || (cost === bestCost && signature < bestSignature)) {
+      best = candidate;
+      bestCost = cost;
+    }
+  });
+  return { pairings: best || [], waiting: Math.max(0, roster.length - (best?.length || 0) * 4), cost: bestCost };
 }
 
 function TournamentDetail({ tournament, onClose, onInvite }) {
@@ -298,7 +391,7 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
       setGenerating(false);
       return;
     }
-    const { pairings, waiting } = buildRoundPairings(players, round, openCourts.length);
+    const { pairings, waiting, cost } = buildRoundPairings(players, round, openCourts.length, matches);
     if (!pairings.length) {
       setError('Minimal 4 pemain diperlukan untuk generate match. Tambahkan pemain di tab Overview.');
       setGenerating(false);
@@ -328,7 +421,7 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
       const localRows = rows.map((row, index) => ({ ...row, id: `local-match-${Date.now()}-${index}` }));
       setMatches((current) => [...current, ...localRows]);
     }
-    setMessage(`${rows.length} match${rows.length === 1 ? '' : 'es'} generated for Round ${round}${waiting ? ` · ${waiting} player${waiting === 1 ? '' : 's'} waiting` : ''}.`);
+    setMessage(`${rows.length} match${rows.length === 1 ? '' : 'es'} generated for Round ${round} with fair pairing (cost ${cost})${waiting ? ` · ${waiting} player${waiting === 1 ? '' : 's'} waiting` : ''}.`);
     setGenerating(false);
   };
 
