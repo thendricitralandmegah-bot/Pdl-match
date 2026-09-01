@@ -589,6 +589,54 @@ export default function PDLUPEngineApp() {
     }
   }
 
+  async function handleRegenerateSchedule() {
+    if (!activeTournament) return;
+    const courts = clamp(Number(manageCourts) || 1, 1, 20);
+    const rounds = clamp(Number(activeTournament.totalRounds) || 1, 1, 30);
+    const currentMatches = Object.values(roundsMatches).flat();
+    if (currentMatches.some((match) => match.submitted)) {
+      setErrorMessage('Jadwal tidak dapat dibuat ulang setelah ada skor yang selesai. Buat tournament baru untuk jadwal berbeda.');
+      return;
+    }
+    if (managePlayers.length < courts * 4) {
+      setErrorMessage(`Jumlah pemain belum cukup untuk ${courts} court. Tambahkan minimal ${courts * 4} pemain.`);
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.confirm(`Regenerate ${rounds} rounds untuk ${managePlayers.length} players dan ${courts} courts? Match yang belum selesai akan diganti.`)) return;
+
+    setIsManaging(true);
+    try {
+      const schedule = buildSchedule(managePlayers.map((player) => player.name), rounds, courts);
+      let nextRounds = { ...schedule.rounds };
+      if (supabase && !String(activeTournament.id).startsWith('local-')) {
+        const { error: deleteError } = await supabase
+          .from('matches')
+          .delete()
+          .eq('tournament_id', activeTournament.id)
+          .eq('is_completed', false);
+        if (deleteError) throw deleteError;
+        const { data: insertedMatches, error: insertError } = await supabase
+          .from('matches')
+          .insert(schedule.matchRows.map((row) => ({ ...row, tournament_id: activeTournament.id })))
+          .select();
+        if (insertError) throw insertError;
+        (insertedMatches || []).forEach((remoteMatch) => {
+          const roundMatches = nextRounds[remoteMatch.round_number] || [];
+          const localMatch = roundMatches.find((match) => match.courtName === `Court ${remoteMatch.court_number}`);
+          if (localMatch) localMatch.id = remoteMatch.id;
+        });
+      }
+      setRoundsMatches(nextRounds);
+      setCurrentRound(1);
+      setMatchLogs([]);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Jadwal gagal dibuat ulang: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
   async function handleSaveCourtCount() {
     if (!activeTournament) return;
     const courts = clamp(Number(manageCourts) || 1, 1, 20);
@@ -822,6 +870,12 @@ export default function PDLUPEngineApp() {
                   <label htmlFor="manage-courts">Courts</label>
                   <div className="manage-court-control"><input id="manage-courts" type="number" min="1" max="20" value={manageCourts} onChange={(event) => setManageCourts(clamp(Number(event.target.value) || 1, 1, 20))} /><button type="button" className="primary-button" onClick={handleSaveCourtCount} disabled={isManaging}>{isManaging ? 'Saving…' : 'Save courts'}</button></div>
                   <small className="helper-text">Minimum 4 players per court. This changes the tournament setup for future scheduling.</small>
+                </div>
+                <div className="manage-section manage-regenerate">
+                  <label>Schedule</label>
+                  <p>Apply the latest player and court setup to all unfinished rounds.</p>
+                  <button type="button" className="regenerate-button" onClick={handleRegenerateSchedule} disabled={isManaging}>↻ Regenerate schedule</button>
+                  <small className="helper-text">Locked after any match has a final score.</small>
                 </div>
               </div>
             </div>
