@@ -1,475 +1,556 @@
 'use client';
 import { useState } from 'react';
 
-export default function PDLUPApp() {
-  const [activeTab, setActiveTab] = useState('MATCHES');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  
-  // Data Tournament Active
-  const [tournament, setTournament] = useState({
-    name: 'PD-Kan Mix Match Vol. 7',
-    matchType: 'Mix Americano',
-    location: 'Golden Padel Batam',
-    targetPoints: 21,
-    courtsCount: 2
-  });
+export default function PDLUPFullApp() {
+  // Navigation State
+  const [currentView, setCurrentView] = useState('HOME'); // 'HOME' | 'CREATE' | 'TOURNAMENT_DETAIL' | 'PROFILE'
+  const [homeFilter, setHomeFilter] = useState('All'); // 'All' | 'Active' | 'Past'
+  const [detailTab, setDetailTab] = useState('MATCHES'); // 'MATCHES' | 'STANDINGS' | 'LOGS'
 
-  const [currentRoundNum, setCurrentRoundNum] = useState(1);
-  const [totalRounds, setTotalRounds] = useState(5);
-
-  // Form State untuk Modal Create
-  const [formName, setFormName] = useState('');
-  const [formType, setFormType] = useState('Americano');
-  const [formCourts, setFormCourts] = useState(2);
-  const [formPoints, setFormPoints] = useState(21);
-  const [formRoster, setFormRoster] = useState("Thendri\nSiti\nBudi\nEka\nAndi\nFani\nRian\nDeni");
-
-  // Matches State
-  const [roundsMatches, setRoundsMatches] = useState({
-    1: [
-      {
-        id: 'r1-c1',
-        courtName: 'Court 1',
-        badge: 'MIX',
-        badgeColor: '#ec4899',
-        team1: { name1: 'Thendri', name2: 'Siti', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Thendri', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Siti' },
-        team2: { name1: 'Budi', name2: 'Eka', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Budi', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Eka' },
-        score1: '',
-        score2: '',
-        submitted: false
-      },
-      {
-        id: 'r1-c2',
-        courtName: 'Court 2',
-        badge: 'MIX',
-        badgeColor: '#ec4899',
-        team1: { name1: 'Andi', name2: 'Fani', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Andi', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Fani' },
-        team2: { name1: 'Rian', name2: 'Deni', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rian', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Deni' },
-        score1: '',
-        score2: '',
-        submitted: false
-      }
-    ]
-  });
-
-  // Players Leaderboard State
-  const [players, setPlayers] = useState([
-    { id: 1, name: 'Thendri', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 2, name: 'Siti', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 3, name: 'Budi', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 4, name: 'Eka', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 5, name: 'Andi', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 6, name: 'Fani', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 7, name: 'Rian', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
-    { id: 8, name: 'Deni', played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, diff: 0 },
+  // Tournament List Database State
+  const [tournaments, setTournaments] = useState([
+    {
+      id: 't-1',
+      name: 'Dragon Padel Club',
+      matchType: 'Mexicano',
+      date: 'Aug 17, 2026 • 10:00 AM',
+      courts: 1,
+      playersCount: 5,
+      status: 'Active',
+      currentRound: 1,
+      totalRounds: 5,
+      points: 32
+    },
+    {
+      id: 't-2',
+      name: "Friday's Tournament",
+      matchType: 'Americano',
+      date: 'Aug 15, 2026 • 8:00 AM',
+      courts: 2,
+      playersCount: 12,
+      status: 'Past',
+      currentRound: 4,
+      totalRounds: 4,
+      points: 21
+    }
   ]);
 
-  // Handler Score Change
-  const handleScoreInput = (matchId, team, val) => {
-    const activeMatches = roundsMatches[currentRoundNum] || [];
-    const updated = activeMatches.map(m => {
-      if (m.id === matchId) {
-        return { ...m, [team]: val };
-      }
-      return m;
-    });
-    setRoundsMatches({ ...roundsMatches, [currentRoundNum]: updated });
-  };
+  const [activeTournamentId, setActiveTournamentId] = useState('t-1');
 
-  // Submit Score & Recalculate Standings
-  const handleSubmitScore = (matchId) => {
-    const activeMatches = roundsMatches[currentRoundNum] || [];
-    const targetMatch = activeMatches.find(m => m.id === matchId);
-    if (!targetMatch || targetMatch.score1 === '' || targetMatch.score2 === '') {
-      alert("Masukkan skor kedua tim terlebih dahulu!");
-      return;
+  // Form State for "Create Tournament" Page (Matching PDLUP Screenshots)
+  const [formName, setFormName] = useState('');
+  const [formMatchType, setFormMatchType] = useState('Americano');
+  const [formDate, setFormDate] = useState('September 1, 2026 at 11:00 AM');
+  const [formCourts, setFormCourts] = useState(1);
+  const [formScoringType, setFormScoringType] = useState('Point Scoring');
+  const [formPoints, setFormPoints] = useState('21 Points');
+  const [playerInput, setPlayerInput] = useState('');
+  const [playersList, setPlayersList] = useState([]);
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Active Tournament Matches Data
+  const [matches, setMatches] = useState([
+    {
+      id: 'm-1',
+      court: 'Court 1',
+      badge: 'MIX',
+      badgeColor: '#ec4899',
+      team1: { name1: 'Thendri', name2: 'Siti', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Thendri', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Siti' },
+      team2: { name1: 'Budi', name2: 'Eka', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Budi', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Eka' },
+      score1: '22',
+      score2: '10',
+      submitted: true
+    },
+    {
+      id: 'm-2',
+      court: 'Court 2',
+      badge: 'OPEN',
+      badgeColor: '#2563eb',
+      team1: { name1: 'Andi', name2: 'Fani', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Andi', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Fani' },
+      team2: { name1: 'Rian', name2: 'Deni', avatar1: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rian', avatar2: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Deni' },
+      score1: '',
+      score2: '',
+      submitted: false
     }
+  ]);
 
-    const s1 = parseInt(targetMatch.score1) || 0;
-    const s2 = parseInt(targetMatch.score2) || 0;
+  // Standings / Leaderboard State
+  const [standings, setStandings] = useState([
+    { pos: 1, name: 'Emilia', m: 3, w: 3, l: 0, pts: 48, diff: '+18' },
+    { pos: 2, name: 'Sophie', m: 3, w: 2, l: 1, pts: 42, diff: '+8' },
+    { pos: 3, name: 'Anna', m: 3, w: 1, l: 2, pts: 35, diff: '-4' },
+    { pos: 4, name: 'Lena', m: 3, w: 0, l: 3, pts: 28, diff: '-10' },
+  ]);
 
-    // Mark Match as Submitted
-    const updatedMatches = activeMatches.map(m => {
-      if (m.id === matchId) return { ...m, submitted: true };
-      return m;
-    });
-    setRoundsMatches({ ...roundsMatches, [currentRoundNum]: updatedMatches });
-
-    // Update Player Leaderboard Stats
-    const t1Names = [targetMatch.team1.name1, targetMatch.team1.name2];
-    const t2Names = [targetMatch.team2.name1, targetMatch.team2.name2];
-
-    setPlayers(prevPlayers => {
-      return prevPlayers.map(p => {
-        let newP = { ...p };
-        if (t1Names.includes(p.name)) {
-          newP.played += 1;
-          newP.pointsFor += s1;
-          newP.pointsAgainst += s2;
-          if (s1 > s2) newP.wins += 1;
-          else if (s2 > s1) newP.losses += 1;
-        } else if (t2Names.includes(p.name)) {
-          newP.played += 1;
-          newP.pointsFor += s2;
-          newP.pointsAgainst += s1;
-          if (s2 > s1) newP.wins += 1;
-          else if (s1 > s2) newP.losses += 1;
-        }
-        newP.diff = newP.pointsFor - newP.pointsAgainst;
-        return newP;
-      }).sort((a, b) => b.pointsFor - a.pointsFor || b.diff - a.diff);
-    });
+  // Player Addition Handler
+  const handleAddPlayer = () => {
+    if (playerInput.trim() !== '') {
+      setPlayersList([...playersList, playerInput.trim()]);
+      setPlayerInput('');
+    }
   };
 
-  // Generator Tournament Baru
-  const handleCreateTournamentSubmit = (e) => {
+  // Submit New Tournament Handler
+  const handleCreateTournament = (e) => {
     e.preventDefault();
-    const rawNames = formRoster.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-    if (rawNames.length < 4) {
-      alert("Masukkan minimal 4 nama pemain!");
-      return;
-    }
+    const newId = `t-${Date.now()}`;
+    const newTourney = {
+      id: newId,
+      name: formName || 'New Tournament',
+      matchType: formMatchType,
+      date: formDate,
+      courts: formCourts,
+      playersCount: playersList.length || 4,
+      status: 'Active',
+      currentRound: 1,
+      totalRounds: 4,
+      points: formPoints
+    };
 
-    const newPlayers = rawNames.map((name, idx) => ({
-      id: idx + 1,
-      name,
-      played: 0,
-      wins: 0,
-      losses: 0,
-      pointsFor: 0,
-      pointsAgainst: 0,
-      diff: 0
-    }));
-
-    setTournament({
-      name: formName || 'Tournament Baru',
-      matchType: formType,
-      location: 'Golden Padel Batam',
-      targetPoints: formPoints,
-      courtsCount: formCourts
-    });
-
-    setPlayers(newPlayers);
-
-    // Generate Round 1 Matches
-    const shuffled = [...newPlayers].sort(() => Math.random() - 0.5);
-    const newMatches = [];
-    for (let c = 0; c < formCourts; c++) {
-      const offset = c * 4;
-      if (offset + 3 < shuffled.length) {
-        newMatches.push({
-          id: `r1-c${c + 1}`,
-          courtName: `Court ${c + 1}`,
-          badge: formType.toUpperCase().includes('MIX') ? 'MIX' : 'OPEN',
-          badgeColor: formType.toUpperCase().includes('MIX') ? '#ec4899' : '#3b82f6',
-          team1: {
-            name1: shuffled[offset].name,
-            name2: shuffled[offset + 1].name,
-            avatar1: `https://api.dicebear.com/7.x/avataaars/svg?seed=${shuffled[offset].name}`,
-            avatar2: `https://api.dicebear.com/7.x/avataaars/svg?seed=${shuffled[offset + 1].name}`
-          },
-          team2: {
-            name1: shuffled[offset + 2].name,
-            name2: shuffled[offset + 3].name,
-            avatar1: `https://api.dicebear.com/7.x/avataaars/svg?seed=${shuffled[offset + 2].name}`,
-            avatar2: `https://api.dicebear.com/7.x/avataaars/svg?seed=${shuffled[offset + 3].name}`
-          },
-          score1: '',
-          score2: '',
-          submitted: false
-        });
-      }
-    }
-
-    setRoundsMatches({ 1: newMatches });
-    setCurrentRoundNum(1);
-    setShowCreateModal(false);
-    setActiveTab('MATCHES');
+    setTournaments([newTourney, ...tournaments]);
+    setActiveTournamentId(newId);
+    setCurrentView('TOURNAMENT_DETAIL');
   };
+
+  // Score Input Change Handler
+  const handleScoreChange = (id, team, val) => {
+    setMatches(matches.map(m => m.id === id ? { ...m, [team]: val } : m));
+  };
+
+  const handleSubmitScore = (id) => {
+    setMatches(matches.map(m => m.id === id ? { ...m, submitted: true } : m));
+  };
+
+  const activeTourney = tournaments.find(t => t.id === activeTournamentId) || tournaments[0];
 
   return (
-    <div style={{ backgroundColor: '#0b0f17', color: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', paddingBottom: '90px' }}>
+    <div style={{ backgroundColor: '#f3f4f6', color: '#1f2937', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', paddingBottom: '70px' }}>
       
-      {/* 1. PDLUP Top Navigation Header */}
-      <div style={{ backgroundColor: '#111827', borderBottom: '1px solid #1f2937', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ backgroundColor: '#ccff00', color: '#000', fontWeight: '900', fontSize: '18px', padding: '4px 10px', borderRadius: '6px', letterSpacing: '1px' }}>
-            PDLUP
+      {/* 1. TOP NAVBAR HEADER (PDLUP BLUE / LIGHT STYLE) */}
+      <header style={{ backgroundColor: '#2563eb', color: '#ffffff', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 30, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setCurrentView('HOME')}>
+          <div style={{ backgroundColor: '#ffffff', color: '#2563eb', padding: '6px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>📍</span>
           </div>
-          <span style={{ fontSize: '12px', color: '#ccff00', backgroundColor: 'rgba(204,255,0,0.1)', border: '1px solid #ccff00', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-            🪙 10
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button onClick={() => alert("Link match berhasil disalin!")} style={{ backgroundColor: '#ccff00', color: '#000', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>SHARE LINK 🔗</button>
-          <button onClick={() => setShowCreateModal(true)} style={{ backgroundColor: '#1f2937', color: '#ccff00', border: '1px solid #ccff00', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>+ NEW</button>
-        </div>
-      </div>
-
-      {/* 2. Sub-Header Tournament Card */}
-      <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
-        <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '14px', padding: '16px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#fff' }}>{tournament.name}</h1>
-              <p style={{ fontSize: '12px', color: '#9ca3af', margin: '4px 0 0 0' }}>{tournament.matchType} • {tournament.location}</p>
-            </div>
-            <span style={{ backgroundColor: '#ccff00', color: '#000', fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px' }}>
-              Round {currentRoundNum} of {totalRounds}
-            </span>
-          </div>
-
-          {/* Round Switcher */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', backgroundColor: '#0b0f17', padding: '8px 12px', borderRadius: '8px' }}>
-            <button 
-              disabled={currentRoundNum === 1}
-              onClick={() => setCurrentRoundNum(currentRoundNum - 1)}
-              style={{ backgroundColor: '#1f2937', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', opacity: currentRoundNum === 1 ? 0.4 : 1 }}>
-              ◀ Prev
-            </button>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#ccff00' }}>ROUND {currentRoundNum}</span>
-            <button 
-              disabled={currentRoundNum === totalRounds}
-              onClick={() => setCurrentRoundNum(currentRoundNum + 1)}
-              style={{ backgroundColor: '#1f2937', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', opacity: currentRoundNum === totalRounds ? 0.4 : 1 }}>
-              Next ▶
-            </button>
+          <div>
+            <h1 style={{ fontSize: '18px', fontWeight: '800', margin: 0, tracking: 'tight' }}>PDLUP</h1>
+            <p style={{ fontSize: '10px', margin: 0, opacity: 0.9, fontWeight: '500' }}>Padel Matchmaker</p>
           </div>
         </div>
 
-        {/* 3. Navigation Tabs */}
-        <div style={{ display: 'flex', backgroundColor: '#111827', padding: '4px', borderRadius: '10px', border: '1px solid #1f2937', marginBottom: '16px' }}>
-          {['MATCHES', 'STANDINGS', 'LOGS'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                backgroundColor: activeTab === tab ? '#ccff00' : 'transparent',
-                color: activeTab === tab ? '#000' : '#9ca3af',
-                transition: '0.2s'
-              }}>
-              {tab}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {currentView === 'TOURNAMENT_DETAIL' && (
+            <button onClick={() => setCurrentView('HOME')} style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+              ← Tournaments
             </button>
-          ))}
+          )}
+          <button style={{ backgroundColor: 'transparent', border: 'none', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>⚙️</button>
         </div>
+      </header>
 
-        {/* 4. Tab Contents */}
-        {activeTab === 'MATCHES' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {(roundsMatches[currentRoundNum] || []).map(match => (
-              <div key={match.id} style={{ backgroundColor: '#111827', border: match.submitted ? '1px solid #ccff00' : '1px solid #1f2937', borderRadius: '14px', padding: '16px' }}>
-                
-                {/* Court Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#fff' }}>{match.courtName}</span>
-                  <span style={{ backgroundColor: match.badgeColor, color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>
-                    {match.badge}
-                  </span>
-                </div>
-
-                {/* Team 1 Row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0b0f17', padding: '10px 12px', borderRadius: '10px', marginBottom: '8px', border: '1px solid #1f2937' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ display: 'flex' }}>
-                      <img src={match.team1.avatar1} alt="p1" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid #ccff00' }} />
-                      <img src={match.team1.avatar2} alt="p2" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid #ccff00', marginLeft: '-10px' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>{match.team1.name1}</div>
-                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#9ca3af' }}>{match.team1.name2}</div>
-                    </div>
-                  </div>
-                  <input 
-                    type="number"
-                    value={match.score1}
-                    disabled={match.submitted}
-                    onChange={(e) => handleScoreInput(match.id, 'score1', e.target.value)}
-                    placeholder="0"
-                    style={{ width: '48px', height: '48px', backgroundColor: '#111827', border: '1px solid #ccff00', borderRadius: '8px', color: '#ccff00', fontSize: '20px', fontWeight: 'bold', textAlign: 'center' }}
-                  />
-                </div>
-
-                <div style={{ textAlign: 'center', fontSize: '11px', color: '#6b7280', fontWeight: 'bold', margin: '4px 0' }}>VS</div>
-
-                {/* Team 2 Row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0b0f17', padding: '10px 12px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #1f2937' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ display: 'flex' }}>
-                      <img src={match.team2.avatar1} alt="p3" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid #3b82f6' }} />
-                      <img src={match.team2.avatar2} alt="p4" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid #3b82f6', marginLeft: '-10px' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>{match.team2.name1}</div>
-                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#9ca3af' }}>{match.team2.name2}</div>
-                    </div>
-                  </div>
-                  <input 
-                    type="number"
-                    value={match.score2}
-                    disabled={match.submitted}
-                    onChange={(e) => handleScoreInput(match.id, 'score2', e.target.value)}
-                    placeholder="0"
-                    style={{ width: '48px', height: '48px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px', color: '#fff', fontSize: '20px', fontWeight: 'bold', textAlign: 'center' }}
-                  />
-                </div>
-
-                {/* Submit Score Button */}
-                <button 
-                  onClick={() => handleSubmitScore(match.id)}
-                  disabled={match.submitted}
+      {/* 2. MAIN VIEW 1: HOME (TOURNAMENT LIST SCREEN) */}
+      {currentView === 'HOME' && (
+        <div style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px' }}>
+          
+          {/* Filter Bar Options */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {['All', 'Active', 'Past'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setHomeFilter(filter)}
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '8px',
+                    padding: '6px 16px',
+                    borderRadius: '20px',
                     border: 'none',
-                    fontWeight: 'bold',
                     fontSize: '13px',
-                    cursor: match.submitted ? 'default' : 'pointer',
-                    backgroundColor: match.submitted ? '#1f2937' : '#ccff00',
-                    color: match.submitted ? '#9ca3af' : '#000'
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    backgroundColor: homeFilter === filter ? '#2563eb' : '#e5e7eb',
+                    color: homeFilter === filter ? '#ffffff' : '#4b5563'
                   }}>
-                  {match.submitted ? '✓ SCORE SUBMITTED' : 'SUBMIT SCORE'}
+                  {filter}
                 </button>
-
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Leaderboard Table */}
-        {activeTab === 'STANDINGS' && (
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '14px', padding: '16px', overflowX: 'auto' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: 'bold', color: '#ccff00', marginTop: 0, marginBottom: '12px' }}>LEADERBOARD KLASEMEN</h2>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #1f2937', color: '#9ca3af', textAlign: 'left' }}>
-                  <th style={{ padding: '8px' }}>POS</th>
-                  <th style={{ padding: '8px' }}>NAMA PEMAIN</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>MAIN</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>MENANG</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>POIN</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>DIFF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((p, idx) => (
-                  <tr key={p.id} style={{ borderBottom: '1px solid #0b0f17' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: 'bold', color: idx === 0 ? '#ccff00' : '#9ca3af' }}>#{idx + 1}</td>
-                    <td style={{ padding: '10px 8px', fontWeight: 'bold' }}>{p.name}</td>
-                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>{p.played}</td>
-                    <td style={{ padding: '10px 8px', textAlign: 'center', color: '#ccff00', fontWeight: 'bold' }}>{p.wins}</td>
-                    <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 'bold' }}>{p.pointsFor}</td>
-                    <td style={{ padding: '10px 8px', textAlign: 'center', color: p.diff >= 0 ? '#ccff00' : '#ef4444' }}>{p.diff > 0 ? `+${p.diff}` : p.diff}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {activeTab === 'LOGS' && (
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '14px', padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>
-            Riwayat log aktivitas match tersimpan otomatis di database Supabase Anda.
-          </div>
-        )}
-
-      </div>
-
-      {/* 5. Create Tournament Modal */}
-      {showCreateModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 30, padding: '16px' }}>
-          <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '16px', padding: '24px', maxWidth: '500px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#ccff00' }}>🏆 Create Tournament</h2>
-              <button onClick={() => setShowCreateModal(false)} style={{ backgroundColor: 'transparent', border: 'none', color: '#9ca3af', fontSize: '20px', cursor: 'pointer' }}>✕</button>
+              ))}
             </div>
+            <button style={{ backgroundColor: '#e5e7eb', border: 'none', padding: '6px 10px', borderRadius: '50%', color: '#4b5563', cursor: 'pointer' }}>⚙️</button>
+          </div>
 
-            <form onSubmit={handleCreateTournamentSubmit}>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>TOURNAMENT NAME</label>
+          {/* Tournament List Cards */}
+          {tournaments.length === 0 ? (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '48px 20px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ fontSize: '36px', marginBottom: '12px' }}>➕</div>
+              <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>No tournaments yet. Create your first one!</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {tournaments.filter(t => homeFilter === 'All' || t.status === homeFilter).map(t => (
+                <div 
+                  key={t.id}
+                  onClick={() => { setActiveTournamentId(t.id); setCurrentView('TOURNAMENT_DETAIL'); }}
+                  style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#111827' }}>{t.name}</h2>
+                    <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>{t.matchType} • {t.courts} Courts • {t.playersCount} Players</p>
+                    <p style={{ fontSize: '11px', color: '#9ca3af', margin: '4px 0 0 0' }}>📅 {t.date}</p>
+                  </div>
+                  <div style={{ fontSize: '18px', color: '#9ca3af' }}>›</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. MAIN VIEW 2: CREATE TOURNAMENT WIZARD */}
+      {currentView === 'CREATE' && (
+        <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px 16px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <span>🏆</span> Create Tournament
+            </h2>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
+            <form onSubmit={handleCreateTournament}>
+              
+              {/* Tournament Name */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Tournament Name</label>
                 <input 
-                  type="text" 
-                  value={formName} 
+                  type="text"
+                  placeholder="Tournament"
+                  value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g. PD-Kan Vol. 8"
-                  style={{ width: '100%', backgroundColor: '#0b0f17', border: '1px solid #374151', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', boxSizing: 'border-box', outline: 'none' }}
                 />
               </div>
 
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>MATCH TYPE</label>
-                <select 
-                  value={formType} 
-                  onChange={(e) => setFormType(e.target.value)}
-                  style={{ width: '100%', backgroundColor: '#0b0f17', border: '1px solid #374151', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', boxSizing: 'border-box' }}>
-                  <option value="Americano">Americano (Rotasi Individu)</option>
-                  <option value="Mix Americano">Mix Americano (Mix Gender)</option>
-                  <option value="Mexicano">Mexicano (Peringkat Dinamis)</option>
-                  <option value="Team Americano">Team Americano (Pasangan Tetap)</option>
-                </select>
+              {/* Match Type Dropdown Trigger */}
+              <div style={{ marginBottom: '18px', position: 'relative' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Match Type</label>
+                <div 
+                  onClick={() => setShowTypeDropdown(!showTypeDropdown)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+                  <span>{formMatchType}</span>
+                  <span style={{ fontSize: '12px', color: '#6b7280' }}>▼</span>
+                </div>
+
+                {/* PDLUP Full Match Types Dropdown Modal */}
+                {showTypeDropdown && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 40, marginTop: '4px', maxHeight: '280px', overflowY: 'auto', padding: '8px' }}>
+                    {[
+                      { title: 'Americano', desc: 'Individual rotation. Play with & against everyone.' },
+                      { title: 'Team Americano', desc: 'Fixed teams. Play against all teams.' },
+                      { title: 'Mix Americano', desc: 'Mixed teams (👨👩). Play with & against everyone.' },
+                      { title: 'Mexicano', desc: 'Balanced matches each round based on ranking.' },
+                      { title: 'Team Mexicano', desc: 'Fixed teams. Balanced matchups each round.' },
+                      { title: 'Mixicano', desc: 'Mixed teams (👨👩). Balanced matches each round.' },
+                      { title: 'KOTH (King of the Hill)', desc: 'Winners move up courts, losers move down.' },
+                      { title: 'Team KOTH', desc: 'Fixed teams. Winners move up courts.' },
+                      { title: 'Knockout', desc: 'Elimination format. Teams compete, losers are out.' },
+                      { title: 'Group Stage', desc: 'Round-robin in groups. Top teams advance to knockout.' },
+                      { title: 'Custom', desc: 'Build your own tournament rules.' }
+                    ].map((item, idx) => (
+                      <div 
+                        key={idx}
+                        onClick={() => { setFormMatchType(item.title); setShowTypeDropdown(false); }}
+                        style={{ padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#transparent'}>
+                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#111827' }}>{item.title}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>{item.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+              {/* Tournament Date Picker Bar */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Tournament Date</label>
+                <div style={{ backgroundColor: '#f3f4f6', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📅</span>
+                  <input 
+                    type="text" 
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
+                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '13px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Number of Courts Counter */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Number of Courts</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => setFormCourts(Math.max(1, formCourts - 1))}
+                    style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#e5e7eb', fontWeight: 'bold', fontSize: '18px', cursor: 'pointer' }}>-</button>
+                  <span style={{ fontSize: '16px', fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{formCourts}</span>
+                  <button 
+                    type="button" 
+                    onClick={() => setFormCourts(formCourts + 1)}
+                    style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#e5e7eb', fontWeight: 'bold', fontSize: '18px', cursor: 'pointer' }}>+</button>
+                </div>
+              </div>
+
+              {/* Scoring Type & Points per Match */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '18px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>COURTS</label>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Scoring Type</label>
                   <select 
-                    value={formCourts} 
-                    onChange={(e) => setFormCourts(parseInt(e.target.value))}
-                    style={{ width: '100%', backgroundColor: '#0b0f17', border: '1px solid #374151', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', boxSizing: 'border-box' }}>
-                    <option value={1}>1 Court (4 Players)</option>
-                    <option value={2}>2 Courts (8 Players)</option>
-                    <option value={3}>3 Courts (12 Players)</option>
-                    <option value={4}>4 Courts (16 Players)</option>
+                    value={formScoringType}
+                    onChange={(e) => setFormScoringType(e.target.value)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}>
+                    <option>Point Scoring</option>
+                    <option>Games & Sets</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>TARGET POINTS</label>
-                  <input 
-                    type="number" 
-                    value={formPoints} 
-                    onChange={(e) => setFormPoints(parseInt(e.target.value) || 21)}
-                    style={{ width: '100%', backgroundColor: '#0b0f17', border: '1px solid #374151', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Points per Match</label>
+                  <select 
+                    value={formPoints}
+                    onChange={(e) => setFormPoints(e.target.value)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}>
+                    <option>16 Points</option>
+                    <option>21 Points</option>
+                    <option>24 Points</option>
+                    <option>32 Points</option>
+                  </select>
                 </div>
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>ROSTER PEMAIN (Import Reclub)</label>
-                <textarea 
-                  rows={5}
-                  value={formRoster}
-                  onChange={(e) => setFormRoster(e.target.value)}
-                  style={{ width: '100%', backgroundColor: '#0b0f17', border: '1px solid #374151', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', fontFamily: 'monospace', boxSizing: 'border-box' }}
-                />
+              {/* Add Players Input Section */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>
+                  Add Players ({playersList.length})
+                </label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input 
+                    type="text"
+                    placeholder="Type a name... or @username"
+                    value={playerInput}
+                    onChange={(e) => setPlayerInput(e.target.value)}
+                    style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={handleAddPlayer}
+                    style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '0 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    👤+
+                  </button>
+                </div>
+
+                {/* Added Players Chips */}
+                {playersList.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', backgroundColor: '#f9fafb', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6' }}>
+                    {playersList.map((p, i) => (
+                      <span key={i} style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', fontWeight: '500' }}>
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Advanced Settings Collapsible */}
+              <div style={{ marginBottom: '20px' }}>
+                <button 
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  style={{ width: '100%', backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '10px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>⚙️ Advanced Settings</span>
+                  <span>{showAdvanced ? '▲' : '▼'}</span>
+                </button>
+                {showAdvanced && (
+                  <div style={{ padding: '12px', marginTop: '6px', backgroundColor: '#f9fafb', borderRadius: '8px', fontSize: '12px', color: '#4b5563' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <input type="checkbox" defaultChecked /> Enable Tiebreaker ranking rules
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="checkbox" defaultChecked /> Enable +M bonus points for match win
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button */}
               <button 
                 type="submit"
-                style={{ width: '100%', backgroundColor: '#ccff00', color: '#000', fontWeight: 'bold', fontSize: '14px', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>
-                Generate Tournament Match 🚀
+                style={{ width: '100%', backgroundColor: '#2563eb', color: '#ffffff', fontWeight: 'bold', fontSize: '15px', padding: '14px', borderRadius: '10px', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+                + Create Tournament
               </button>
+
             </form>
           </div>
         </div>
       )}
 
-      {/* 6. Fixed Bottom Floating Menu */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#111827', borderTop: '1px solid #1f2937', padding: '10px 0', display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 20 }}>
-        <button onClick={() => setActiveTab('MATCHES')} style={{ backgroundColor: 'transparent', border: 'none', color: '#ccff00', fontSize: '11px', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-          🏠 <span>HOME</span>
+      {/* 4. MAIN VIEW 3: ACTIVE TOURNAMENT DETAIL SCREEN */}
+      {currentView === 'TOURNAMENT_DETAIL' && (
+        <div style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px' }}>
+          
+          {/* Tournament Header Summary */}
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#111827' }}>{activeTourney.name}</h2>
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>{activeTourney.matchType} • {activeTourney.courts} Courts • {activeTourney.playersCount} Players</p>
+              </div>
+              <span style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', fontSize: '11px', fontWeight: 'bold', padding: '4px 10px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                Round {activeTourney.currentRound} of {activeTourney.totalRounds}
+              </span>
+            </div>
+
+            {/* Round Switcher */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', backgroundColor: '#f9fafb', padding: '8px 12px', borderRadius: '8px', border: '1px solid #f3f4f6' }}>
+              <button style={{ border: 'none', background: 'transparent', color: '#2563eb', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>◀ Prev</button>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1f2937' }}>ROUND {activeTourney.currentRound}</span>
+              <button style={{ border: 'none', background: 'transparent', color: '#2563eb', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Next ▶</button>
+            </div>
+          </div>
+
+          {/* Sub Tab Navigation */}
+          <div style={{ display: 'flex', backgroundColor: '#e5e7eb', padding: '3px', borderRadius: '10px', marginBottom: '16px' }}>
+            {['MATCHES', 'STANDINGS', 'LOGS'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setDetailTab(tab)}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  backgroundColor: detailTab === tab ? '#ffffff' : 'transparent',
+                  color: detailTab === tab ? '#111827' : '#6b7280',
+                  boxShadow: detailTab === tab ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                }}>
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Matches Tab Content */}
+          {detailTab === 'MATCHES' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {matches.map(m => (
+                <div key={m.id} style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: m.submitted ? '1px solid #2563eb' : '1px solid #e5e7eb' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>{m.court}</span>
+                    <span style={{ backgroundColor: m.badgeColor, color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>{m.badge}</span>
+                  </div>
+
+                  {/* Team 1 Card Row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', padding: '10px 12px', borderRadius: '10px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex' }}>
+                        <img src={m.team1.avatar1} alt="p1" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #2563eb' }} />
+                        <img src={m.team1.avatar2} alt="p2" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #2563eb', marginLeft: '-8px' }} />
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#111827' }}>{m.team1.name1} & {m.team1.name2}</span>
+                    </div>
+                    <input 
+                      type="number" 
+                      value={m.score1} 
+                      disabled={m.submitted}
+                      onChange={(e) => handleScoreChange(m.id, 'score1', e.target.value)}
+                      placeholder="0"
+                      style={{ width: '44px', height: '44px', textAlign: 'center', fontSize: '18px', fontWeight: 'bold', borderRadius: '8px', border: '1px solid #2563eb', outline: 'none', color: '#2563eb' }}
+                    />
+                  </div>
+
+                  {/* Team 2 Card Row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', padding: '10px 12px', borderRadius: '10px', marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex' }}>
+                        <img src={m.team2.avatar1} alt="p3" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #6b7280' }} />
+                        <img src={m.team2.avatar2} alt="p4" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #6b7280', marginLeft: '-8px' }} />
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#111827' }}>{m.team2.name1} & {m.team2.name2}</span>
+                    </div>
+                    <input 
+                      type="number" 
+                      value={m.score2} 
+                      disabled={m.submitted}
+                      onChange={(e) => handleScoreChange(m.id, 'score2', e.target.value)}
+                      placeholder="0"
+                      style={{ width: '44px', height: '44px', textAlign: 'center', fontSize: '18px', fontWeight: 'bold', borderRadius: '8px', border: '1px solid #d1d5db', outline: 'none', color: '#111827' }}
+                    />
+                  </div>
+
+                  <button 
+                    onClick={() => handleSubmitScore(m.id)}
+                    disabled={m.submitted}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '13px', cursor: m.submitted ? 'default' : 'pointer', backgroundColor: m.submitted ? '#e5e7eb' : '#2563eb', color: m.submitted ? '#9ca3af' : '#fff' }}>
+                    {m.submitted ? '✓ SCORE SUBMITTED' : 'SUBMIT SCORE'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Standings Tab Content */}
+          {detailTab === 'STANDINGS' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
+              <div style={{ textAlign: 'center', padding: '12px 0 20px 0', borderBottom: '1px solid #f3f4f6', marginBottom: '16px' }}>
+                <span style={{ fontSize: '32px' }}>🏆</span>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '4px 0 0 0', color: '#1e3a8a' }}>{standings[0]?.name || 'Leader'}</h3>
+                <p style={{ fontSize: '11px', color: '#6b7280', margin: 0 }}>Tournament Champion</p>
+              </div>
+
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e5e7eb', color: '#6b7280', textAlign: 'left' }}>
+                    <th style={{ padding: '8px' }}>#</th>
+                    <th style={{ padding: '8px' }}>Player</th>
+                    <th style={{ padding: '8px', textAlign: 'center' }}>W-L-T</th>
+                    <th style={{ padding: '8px', textAlign: 'center' }}>DIFF</th>
+                    <th style={{ padding: '8px', textAlign: 'center' }}>PTS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {standings.map(s => (
+                    <tr key={s.pos} style={{ borderBottom: '1px solid #f9fafb' }}>
+                      <td style={{ padding: '10px 8px', fontWeight: 'bold', color: s.pos === 1 ? '#2563eb' : '#6b7280' }}>{s.pos}</td>
+                      <td style={{ padding: '10px 8px', fontWeight: 'bold', color: '#111827' }}>{s.name}</td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', color: '#4b5563' }}>{s.w}-{s.l}-0</td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', color: s.diff.startsWith('+') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{s.diff}</td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{s.pts}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* 5. FIXED BOTTOM APP BAR NAVIGATION (PDLUP FLOATING STYLE) */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '1px solid #e5e7eb', padding: '8px 0', display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 50, boxShadow: '0 -2px 10px rgba(0,0,0,0.05)' }}>
+        <button 
+          onClick={() => setCurrentView('HOME')}
+          style={{ backgroundColor: 'transparent', border: 'none', color: currentView === 'HOME' ? '#2563eb' : '#6b7280', fontSize: '11px', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+          <span>🏠</span> <span>Home</span>
         </button>
-        <button onClick={() => setShowCreateModal(true)} style={{ backgroundColor: '#ccff00', border: 'none', color: '#000', width: '42px', height: '42px', borderRadius: '50%', fontWeight: 'bold', fontSize: '22px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', marginTop: '-18px', boxShadow: '0 0 12px rgba(204,255,0,0.5)' }}>
+        
+        {/* Floating Add Tournament Button */}
+        <button 
+          onClick={() => setCurrentView('CREATE')}
+          style={{ backgroundColor: '#2563eb', border: 'none', color: '#ffffff', width: '44px', height: '44px', borderRadius: '50%', fontWeight: 'bold', fontSize: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', marginTop: '-16px', boxShadow: '0 4px 12px rgba(37,99,235,0.4)' }}>
           +
         </button>
-        <button onClick={() => setActiveTab('STANDINGS')} style={{ backgroundColor: 'transparent', border: 'none', color: '#9ca3af', fontSize: '11px', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-          🏆 <span>RANKING</span>
+
+        <button 
+          onClick={() => setCurrentView('PROFILE')}
+          style={{ backgroundColor: 'transparent', border: 'none', color: currentView === 'PROFILE' ? '#2563eb' : '#6b7280', fontSize: '11px', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+          <span>👤</span> <span>Profile</span>
         </button>
       </div>
 
