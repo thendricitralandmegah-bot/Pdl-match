@@ -234,6 +234,10 @@ export default function PDLUPEngineApp() {
   const [managePlayerInput, setManagePlayerInput] = useState('');
   const [manageCourts, setManageCourts] = useState(1);
   const [isManaging, setIsManaging] = useState(false);
+  const [tournamentMembers, setTournamentMembers] = useState([]);
+  const [memberEmailInput, setMemberEmailInput] = useState('');
+  const [memberRoleInput, setMemberRoleInput] = useState('viewer');
+  const [linkedPlayerUserId, setLinkedPlayerUserId] = useState('');
 
   const [formName, setFormName] = useState('');
   const [formMatchType, setFormMatchType] = useState('Americano');
@@ -424,6 +428,16 @@ export default function PDLUPEngineApp() {
     setIsLoading(false);
   }
 
+  async function fetchTournamentMembers(tournamentId) {
+    if (!supabase || !tournamentId || String(tournamentId).startsWith('local-')) return;
+    const { data, error } = await supabase.rpc('list_tournament_members', { tournament_uuid: tournamentId });
+    if (error) {
+      setErrorMessage(`Gagal memuat anggota: ${error.message}`);
+      return;
+    }
+    setTournamentMembers(data || []);
+  }
+
   async function fetchMatchesAndStandings(tournamentId, tournamentForSetup = activeTournament) {
     if (!supabase) return;
     const [{ data: matchesData, error: matchesError }, { data: playersData, error: playersError }] = await Promise.all([
@@ -440,7 +454,8 @@ export default function PDLUPEngineApp() {
       grouped[match.round_number].push(mapRemoteMatch(match));
     });
     setRoundsMatches(grouped);
-    setManagePlayers((playersData || []).map((player) => ({ id: player.id, name: player.name })));
+    setManagePlayers((playersData || []).map((player) => ({ id: player.id, name: player.name, user_id: player.user_id || '' })));
+    await fetchTournamentMembers(tournamentId);
     setManageCourts(normalizeTournament(tournamentForSetup || {}).courts || 1);
     setStandings(calculateStandings((playersData || []).map((player) => ({ id: player.id, name: player.name })), matchesData || []));
     setMatchLogs((matchesData || [])
@@ -662,6 +677,31 @@ export default function PDLUPEngineApp() {
     }
   }
 
+  async function handleManageAddMember() {
+    if (!canManage) {
+      setErrorMessage('Hanya admin yang dapat mengelola anggota.');
+      return;
+    }
+    if (!supabase || !activeTournament || !memberEmailInput.trim()) return;
+    setIsManaging(true);
+    try {
+      const { data, error } = await supabase.rpc('upsert_tournament_member_by_email', {
+        tournament_uuid: activeTournament.id,
+        member_email: memberEmailInput.trim(),
+        member_role: memberRoleInput
+      });
+      if (error) throw error;
+      const member = data?.[0];
+      if (member) setTournamentMembers((current) => [...current.filter((item) => item.user_id !== member.user_id), member]);
+      setMemberEmailInput('');
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Anggota gagal ditambahkan: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
   async function handleManageAddPlayer() {
     if (!canManage) {
       setErrorMessage('Hanya admin yang dapat mengelola pemain.');
@@ -679,7 +719,7 @@ export default function PDLUPEngineApp() {
       if (supabase && !String(activeTournament.id).startsWith('local-')) {
         const { data, error } = await supabase
           .from('players')
-          .insert([{ tournament_id: activeTournament.id, name, matches_played: 0, wins: 0, points_for: 0, points_against: 0 }])
+          .insert([{ tournament_id: activeTournament.id, name, user_id: linkedPlayerUserId || null, matches_played: 0, wins: 0, points_for: 0, points_against: 0 }])
           .select('id,name')
           .single();
         if (error) throw error;
@@ -687,6 +727,7 @@ export default function PDLUPEngineApp() {
       }
       setManagePlayers((current) => [...current, newPlayer]);
       setManagePlayerInput('');
+      setLinkedPlayerUserId('');
       setErrorMessage('');
       if (supabase && !String(activeTournament.id).startsWith('local-')) {
         await fetchMatchesAndStandings(activeTournament.id, activeTournament);
@@ -1071,10 +1112,30 @@ export default function PDLUPEngineApp() {
             <div className="manage-panel">
               <div className="section-title"><div><p className="eyebrow">TOURNAMENT SETUP</p><h2>Manage players & courts</h2></div><span>{managePlayers.length} players</span></div>
               <div className="manage-grid">
+                <div className="manage-section manage-members-section">
+                  <label htmlFor="member-email-input">Tournament members</label>
+                  <div className="add-player-row">
+                    <input id="member-email-input" type="email" value={memberEmailInput} onChange={(event) => setMemberEmailInput(event.target.value)} placeholder="Registered account email" />
+                    <select value={memberRoleInput} onChange={(event) => setMemberRoleInput(event.target.value)} aria-label="Member role">
+                      <option value="viewer">Viewer</option>
+                      <option value="scorer">Scorer</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button type="button" className="secondary-button" onClick={handleManageAddMember} disabled={isManaging}>＋ Add</button>
+                  </div>
+                  <div className="manage-member-list">
+                    {tournamentMembers.map((member) => <div className="manage-member-row" key={member.user_id}><span>{member.display_name || member.email}</span><strong>{member.role}</strong></div>)}
+                  </div>
+                  <small className="helper-text">Account harus sudah terdaftar dan email sudah dikonfirmasi.</small>
+                </div>
                 <div className="manage-section">
                   <label htmlFor="manage-player-input">Add player</label>
                   <div className="add-player-row">
                     <input id="manage-player-input" value={managePlayerInput} onChange={(event) => setManagePlayerInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); handleManageAddPlayer(); } }} placeholder="Player name" />
+                    <select value={linkedPlayerUserId} onChange={(event) => setLinkedPlayerUserId(event.target.value)} aria-label="Link player account">
+                      <option value="">No linked account</option>
+                      {tournamentMembers.map((member) => <option key={member.user_id} value={member.user_id}>{member.display_name || member.email}</option>)}
+                    </select>
                     <button type="button" className="secondary-button" onClick={handleManageAddPlayer} disabled={isManaging}>＋ Add</button>
                   </div>
                   <div className="manage-player-list">
