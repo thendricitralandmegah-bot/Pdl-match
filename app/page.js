@@ -1,13 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 const MATCH_TYPES = [
   { title: 'Americano', desc: 'Rotasi individu dengan pasangan yang berganti.' },
@@ -39,6 +33,13 @@ function normalizeTournament(tournament) {
 export default function PDLUPDualPanelApp() {
   const [currentView, setCurrentView] = useState('TOURNAMENT_DETAIL'); // 'HOME' | 'CREATE' | 'TOURNAMENT_DETAIL' | 'PROFILE'
   const [tournaments, setTournaments] = useState([]);
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(Boolean(supabase));
+  const [authMode, setAuthMode] = useState('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
+  const [dataError, setDataError] = useState('');
   const [activeTournament, setActiveTournament] = useState({
     id: 'local-1',
     name: 'Ga',
@@ -102,6 +103,92 @@ export default function PDLUPDualPanelApp() {
   const [formPoints, setFormPoints] = useState('21');
   const [playerInput, setPlayerInput] = useState('');
 
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return undefined;
+    }
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !session?.user?.id) return undefined;
+
+    let cancelled = false;
+    const loadTournaments = async () => {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('*')
+        .eq('owner_id', session.user.id)
+        .order('created_at', { ascending: false });
+
+      if (cancelled) return;
+      if (error) {
+        setDataError(error.message);
+        return;
+      }
+
+      setDataError('');
+      const normalized = (data || []).map(normalizeTournament);
+      setTournaments(normalized);
+      if (normalized[0]) setActiveTournament(normalized[0]);
+    };
+
+    loadTournaments();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthMessage('');
+    if (!supabase) {
+      setAuthMessage('Supabase belum terhubung. Periksa environment variables di Vercel.');
+      return;
+    }
+    if (!authEmail || !authPassword) {
+      setAuthMessage('Masukkan email dan password terlebih dahulu.');
+      return;
+    }
+
+    const result = authMode === 'signup'
+      ? await supabase.auth.signUp({ email: authEmail, password: authPassword, options: { data: { display_name: authEmail.split('@')[0] } } })
+      : await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+
+    if (result.error) {
+      setAuthMessage(result.error.message);
+      return;
+    }
+
+    setSession(result.data.session);
+    setAuthMessage(authMode === 'signup' ? 'Akun dibuat. Cek email Anda jika verifikasi email aktif.' : 'Login berhasil.');
+    if (result.data.session) setCurrentView('HOME');
+  };
+
+  const handleSignOut = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+    setTournaments([]);
+    setCurrentView('HOME');
+  };
+
   const currentMatch = roundsMatches[activeRound] || roundsMatches[1] || {
     court: 'Court 1',
     teamA: ['Player 1', 'Player 2'],
@@ -126,7 +213,7 @@ export default function PDLUPDualPanelApp() {
   };
 
   // Finish Match & Recalculate Leaderboard
-  const handleFinishMatch = () => {
+  const handleFinishMatch = async () => {
     const sA = parseInt(currentMatch.scoreA) || 0;
     const sB = parseInt(currentMatch.scoreB) || 0;
 
@@ -166,10 +253,19 @@ export default function PDLUPDualPanelApp() {
         return newP;
       }).sort((a, b) => b.pts - a.pts || b.diff - a.diff);
     });
+
+    if (supabase && session?.user?.id && activeTournament?.id && !String(activeTournament.id).startsWith('local-')) {
+      const { error } = await supabase
+        .from('matches')
+        .update({ score_a: sA, score_b: sB, is_completed: true, badge: `Round ${activeRound}` })
+        .eq('tournament_id', activeTournament.id)
+        .eq('round_number', activeRound);
+      if (error) setDataError(error.message);
+    }
   };
 
   // Submit Form Create Tournament
-  const handleCreateSubmit = (e) => {
+  const handleCreateSubmit = async (e) => {
     e.preventDefault();
     if (playersList.length < 4) {
       alert("Masukkan minimal 4 pemain!");
@@ -177,7 +273,7 @@ export default function PDLUPDualPanelApp() {
     }
 
     const tName = formName.trim() || 'Ga';
-    const newTourney = {
+    const localTourney = {
       id: `local-${Date.now()}`,
       name: tName,
       matchType: formMatchType,
@@ -187,6 +283,32 @@ export default function PDLUPDualPanelApp() {
       targetPoints: formPoints,
       date: '09/01/2026 6:00 PM'
     };
+    let newTourney = localTourney;
+
+    if (supabase && session?.user?.id) {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .insert({
+          owner_id: session.user.id,
+          name: tName,
+          format: formMatchType,
+          court_count: formCourts,
+          match_type: formMatchType,
+          target_points: Number(formPoints),
+          total_rounds: formRounds,
+          share_slug: `${tName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now()}`,
+          status: 'Active'
+        })
+        .select()
+        .single();
+
+      if (error) {
+        setDataError(error.message);
+        return;
+      }
+      newTourney = normalizeTournament(data);
+      setTournaments(prev => [newTourney, ...prev]);
+    }
 
     const newLeaderboard = playersList.map((name, idx) => ({
       id: `p-${idx}`,
@@ -200,6 +322,7 @@ export default function PDLUPDualPanelApp() {
     }));
 
     setActiveTournament(newTourney);
+    if (!supabase || !session?.user?.id) setTournaments(prev => [normalizeTournament(newTourney), ...prev]);
     setLeaderboard(newLeaderboard);
     setActiveRound(1);
     setCurrentView('TOURNAMENT_DETAIL');
@@ -215,7 +338,16 @@ export default function PDLUPDualPanelApp() {
           <div style={{ backgroundColor: '#ffffff', color: '#2563eb', padding: '4px 6px', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold' }}>📍</div>
           <span style={{ fontSize: '16px', fontWeight: 'bold', letterSpacing: '-0.5px' }}>PDLUP - Padel Matchmaker</span>
         </div>
-        <button style={{ backgroundColor: 'transparent', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}>⚙️</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {authLoading ? (
+            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,.75)' }}>Checking session…</span>
+          ) : session ? (
+            <button onClick={handleSignOut} style={{ backgroundColor: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.25)', color: '#ffffff', padding: '7px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>{session.user.email}</button>
+          ) : (
+            <button onClick={() => setCurrentView('PROFILE')} style={{ backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,.35)', color: '#ffffff', padding: '7px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>Sign in</button>
+          )}
+          <button style={{ backgroundColor: 'transparent', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}>⚙️</button>
+        </div>
       </header>
 
       {/* 2. SUB-HEADER METADATA */}
@@ -399,6 +531,37 @@ export default function PDLUPDualPanelApp() {
           </div>
 
         </main>
+      )}
+
+      {dataError && (
+        <div style={{ maxWidth: '1200px', margin: '0 auto 20px', padding: '12px 16px', color: '#991b1b', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '12px' }}>
+          Supabase: {dataError}
+        </div>
+      )}
+
+      {/* AUTH / PROFILE VIEW */}
+      {currentView === 'PROFILE' && (
+        <div style={{ maxWidth: '460px', margin: '24px auto 90px', padding: '28px 24px', border: '1px solid #e5e7eb', borderRadius: '18px', backgroundColor: '#ffffff', boxShadow: '0 8px 24px rgba(15,23,42,.06)' }}>
+          {session ? (
+            <div style={{ textAlign: 'center' }}>
+              <div className="auth-mark" style={{ display: 'grid', width: '48px', height: '48px', margin: '0 auto 16px', placeItems: 'center', borderRadius: '14px', color: '#ffffff', backgroundColor: '#2563eb', fontWeight: '800', fontSize: '22px' }}>P</div>
+              <h2 style={{ margin: '0 0 8px', fontSize: '26px', color: '#111827' }}>You’re in.</h2>
+              <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>{session.user.email}</p>
+              <button onClick={handleSignOut} style={{ width: '100%', marginTop: '24px', padding: '12px', border: 0, borderRadius: '10px', color: '#ffffff', backgroundColor: '#2563eb', fontWeight: '800', cursor: 'pointer' }}>Sign out</button>
+            </div>
+          ) : (
+            <form onSubmit={handleAuthSubmit}>
+              <div className="court-kicker" style={{ color: '#2563eb', fontSize: '10px', fontWeight: '800', letterSpacing: '.16em', textTransform: 'uppercase' }}>Your next rally starts here</div>
+              <h2 style={{ margin: '8px 0', fontSize: '26px', color: '#111827' }}>{authMode === 'signup' ? 'Create your account' : 'Sign in to PDLUP'}</h2>
+              <p style={{ margin: '0 0 22px', color: '#64748b', fontSize: '13px', lineHeight: '1.6' }}>Save tournaments, rosters, and match scores across devices.</p>
+              <label style={{ display: 'block', marginBottom: '14px', color: '#334155', fontSize: '11px', fontWeight: '800' }}>EMAIL<input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@example.com" style={{ display: 'block', width: '100%', marginTop: '7px', padding: '11px 12px', border: '1px solid #dbe3ef', borderRadius: '9px', boxSizing: 'border-box' }} /></label>
+              <label style={{ display: 'block', marginBottom: '14px', color: '#334155', fontSize: '11px', fontWeight: '800' }}>PASSWORD<input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="At least 6 characters" style={{ display: 'block', width: '100%', marginTop: '7px', padding: '11px 12px', border: '1px solid #dbe3ef', borderRadius: '9px', boxSizing: 'border-box' }} /></label>
+              <button type="submit" style={{ width: '100%', padding: '12px', border: 0, borderRadius: '10px', color: '#ffffff', backgroundColor: '#2563eb', fontWeight: '800', cursor: 'pointer' }}>{authMode === 'signup' ? 'Create account' : 'Sign in'}</button>
+              {authMessage && <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '9px', color: '#1d4ed8', backgroundColor: '#eff6ff', fontSize: '12px', lineHeight: '1.5' }}>{authMessage}</div>}
+              <button type="button" onClick={() => { setAuthMode(authMode === 'signup' ? 'signin' : 'signup'); setAuthMessage(''); }} style={{ width: '100%', marginTop: '15px', border: 0, color: '#2563eb', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }}>{authMode === 'signup' ? 'Already have an account? Sign in' : 'New to PDLUP? Create an account'}</button>
+            </form>
+          )}
+        </div>
       )}
 
       {/* CREATE TOURNAMENT VIEW */}
