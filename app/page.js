@@ -268,8 +268,8 @@ export default function PDLUPEngineApp() {
   }, [homeFilter, tournaments]);
 
   useEffect(() => {
-    fetchTournaments();
-  }, []);
+    if (authReady) fetchTournaments();
+  }, [authReady, session]);
 
   useEffect(() => {
     if (!supabase) {
@@ -399,6 +399,25 @@ export default function PDLUPEngineApp() {
     setAuthMessage('');
   }
 
+  async function handleDeleteTournament() {
+    if (!canManage || !supabase || !activeTournament) {
+      setErrorMessage('Hanya admin yang dapat menghapus tournament.');
+      return;
+    }
+    if (!window.confirm(`Hapus tournament "${activeTournament.name}" beserta semua match dan pemainnya? Tindakan ini tidak dapat dibatalkan.`)) return;
+    setIsManaging(true);
+    try {
+      const { error } = await supabase.from('tournaments').delete().eq('id', activeTournament.id);
+      if (error) throw error;
+      setTournaments((current) => current.filter((item) => item.id !== activeTournament.id));
+      goHome();
+    } catch (error) {
+      setErrorMessage(`Tournament gagal dihapus: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
   async function fetchTournaments() {
     setIsLoading(true);
     setErrorMessage('');
@@ -406,10 +425,22 @@ export default function PDLUPEngineApp() {
       setIsLoading(false);
       return;
     }
-    const { data, error } = await supabase
-      .from('tournaments')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const sharedSlug = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tournament') : null;
+    let data = [];
+    let error = null;
+    if (session) {
+      const [{ data: owned, error: ownedError }, { data: memberships, error: membershipError }] = await Promise.all([
+        supabase.from('tournaments').select('*').eq('owner_id', session.user.id).order('created_at', { ascending: false }),
+        supabase.from('tournament_members').select('tournament_id').eq('user_id', session.user.id)
+      ]);
+      error = ownedError || membershipError;
+      const ids = [...new Set([...(owned || []).map((item) => item.id), ...(memberships || []).map((item) => item.tournament_id)])];
+      if (!error && ids.length) {
+        const result = await supabase.from('tournaments').select('*').in('id', ids).order('created_at', { ascending: false });
+        data = result.data || [];
+        error = result.error;
+      }
+    }
     if (error) {
       setErrorMessage(`Gagal memuat tournament: ${error.message}`);
     } else {
@@ -421,9 +452,10 @@ export default function PDLUPEngineApp() {
         return normalizeTournament({ ...tournament, players_count: count ?? tournament.players_count ?? 0 });
       }));
       setTournaments(enrichedTournaments);
-      const sharedSlug = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tournament') : null;
-      const sharedTournament = sharedSlug ? enrichedTournaments.find((item) => item.share_slug === sharedSlug || item.id === sharedSlug) : null;
-      if (sharedTournament) openTournament(sharedTournament);
+      if (sharedSlug) {
+        const { data: sharedData, error: sharedError } = await supabase.from('tournaments').select('*').or(`share_slug.eq.${sharedSlug},id.eq.${sharedSlug}`).maybeSingle();
+        if (!sharedError && sharedData) openTournament(normalizeTournament(sharedData));
+      }
     }
     setIsLoading(false);
   }
@@ -1100,6 +1132,7 @@ export default function PDLUPEngineApp() {
             </div>
             <div className="detail-hero-actions">
               {canManage && <button className="share-button" onClick={() => setShowManage((value) => !value)}>{showManage ? '× Close' : '⚙ Manage'}</button>}
+              {canManage && <button className="share-button danger-button" onClick={handleDeleteTournament} disabled={isManaging}>Delete</button>}
               {session && !currentRole && !activeTournament.owner_id && <button className="share-button claim-button" onClick={handleClaimTournament} disabled={isManaging}>Claim as admin</button>}
               <button className="share-button" onClick={handleShareTournament}>↗ Share</button>
               {session && currentRole && <span className="role-badge">{currentRole}</span>}
