@@ -279,7 +279,14 @@ export default function PDLUPEngineApp() {
     if (error) {
       setErrorMessage(`Gagal memuat tournament: ${error.message}`);
     } else {
-      setTournaments((data || []).map(normalizeTournament));
+      const enrichedTournaments = await Promise.all((data || []).map(async (tournament) => {
+        const { count } = await supabase
+          .from('players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournament.id);
+        return normalizeTournament({ ...tournament, players_count: count ?? tournament.players_count ?? 0 });
+      }));
+      setTournaments(enrichedTournaments);
     }
     setIsLoading(false);
   }
