@@ -225,7 +225,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .auth-switch { width: 100%; margin-top: 17px; border: 0; color: var(--blue); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; }
 .auth-guest { width: 100%; margin-top: 13px; }
 .account-pill { max-width: 140px; overflow: hidden; padding: 8px 11px; border: 1px solid #bfdbfe; border-radius: 999px; color: var(--blue); background: #eff6ff; cursor: pointer; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-.profile-logout { margin-top: 24px; }
+.profile-logout { width: 100%; margin-top: 24px; color: var(--blue); background: var(--blue-soft); border: 1px solid #bfdbfe; }
+.profile-logout:hover { color: #fff; background: var(--blue); }
 .profile-avatar { display: grid; width: 76px; height: 76px; place-items: center; margin: 0 auto 18px; border-radius: 24px; color: #fff; background: linear-gradient(135deg, var(--blue), #60a5fa); font: 700 30px 'Space Grotesk', sans-serif; }
 .profile-card h1 { margin-bottom: 7px; font-size: 30px; }
 .profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
