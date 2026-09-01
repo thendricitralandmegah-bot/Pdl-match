@@ -308,11 +308,20 @@ export default function Home() {
   };
 
   const handleCreate = async (tournament) => {
-    if (!supabase || !session) {
-      setTournaments((current) => [tournament, ...current]);
-      showNotice('Tournament created locally. Sign in to sync it across devices.');
-      return true;
+    if (!supabase) {
+      setAuthMessage('Supabase belum terkonfigurasi pada deployment ini.');
+      showNotice('Supabase belum siap pada deployment ini.');
+      return false;
     }
+    if (!session) {
+      setAuthMode('signin');
+      setAuthMessage('Silakan sign in terlebih dahulu untuk membuat match.');
+      document.getElementById('profile')?.scrollIntoView({ behavior: 'smooth' });
+      showNotice('Sign in dulu untuk membuat match.');
+      return false;
+    }
+
+    setDataError('');
     const slugBase = tournament.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'tournament';
     const { data, error } = await supabase.from('tournaments').insert({
       owner_id: session.user.id,
@@ -327,12 +336,30 @@ export default function Home() {
     }).select().single();
     if (error) {
       setDataError(error.message);
-      showNotice('Could not save tournament. Check the Supabase policy.');
+      showNotice(`Tournament gagal dibuat: ${error.message}`);
       return false;
     }
+
+    const { error: matchError } = await supabase.from('matches').insert({
+      tournament_id: data.id,
+      round_number: 1,
+      court_number: 1,
+      badge: 'OPEN',
+      team_a: [],
+      team_b: [],
+      score_a: 0,
+      score_b: 0,
+      is_completed: false,
+    });
+    if (matchError) {
+      setDataError(`Tournament tersimpan, tetapi match pertama gagal dibuat: ${matchError.message}`);
+      showNotice('Tournament tersimpan, tetapi match belum dibuat.');
+      return false;
+    }
+
     const saved = { ...tournament, id: data.id };
     setTournaments((current) => [saved, ...current]);
-    showNotice('Tournament created and synced.');
+    showNotice('Tournament dan match pertama berhasil dibuat.');
     return true;
   };
 
