@@ -1,674 +1,711 @@
 'use client';
-import { useState, useEffect } from 'react';
+
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase Realtime Client Init
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
+const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+const MATCH_TYPES = [
+  { title: 'Americano', desc: 'Rotasi individu dengan pasangan yang berganti.' },
+  { title: 'Mexicano', desc: 'Pairing menyesuaikan klasemen setiap ronde.' },
+  { title: 'Team Americano', desc: 'Tim tetap bertanding sepanjang turnamen.' },
+  { title: 'Mix Americano', desc: 'Rotasi pasangan campuran.' },
+  { title: 'Team Mexicano', desc: 'Tim tetap dengan pairing berbasis klasemen.' }
+];
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+function normalizeTournament(tournament) {
+  const totalRounds = Number(tournament.total_rounds ?? tournament.totalRounds ?? 4);
+  const courts = Number(tournament.court_count ?? tournament.courts ?? 1);
+  return {
+    ...tournament,
+    id: tournament.id,
+    name: tournament.name || 'Untitled Tournament',
+    matchType: tournament.match_type || tournament.matchType || 'Americano',
+    courts: courts > 0 ? courts : 1,
+    totalRounds: totalRounds > 0 ? totalRounds : 4,
+    playersCount: Number(tournament.players_count ?? tournament.playersCount ?? 0),
+    status: tournament.status || 'Active'
+  };
+}
+
+function avatarUrl(name) {
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || 'Player')}&backgroundColor=2563eb&fontFamily=Arial`;
+}
+
+function rotate(items, amount) {
+  if (!items.length) return [];
+  const offset = ((amount % items.length) + items.length) % items.length;
+  return [...items.slice(offset), ...items.slice(0, offset)];
+}
+
+function makeCandidate(players, round, courts, shift, reverse) {
+  const ordered = rotate(players, shift);
+  if (reverse) ordered.reverse();
+  const active = ordered.slice(0, courts * 4);
+  const matches = [];
+  for (let courtIndex = 0; courtIndex < courts; courtIndex += 1) {
+    const offset = courtIndex * 4;
+    if (offset + 3 >= active.length) continue;
+    matches.push({
+      round,
+      court: courtIndex + 1,
+      team1: [active[offset], active[offset + 1]],
+      team2: [active[offset + 2], active[offset + 3]]
+    });
+  }
+  return matches;
+}
+
+function candidateScore(matches, partnerHistory, opponentHistory) {
+  let score = 0;
+  matches.forEach((match) => {
+    const pairings = [
+      [match.team1[0], match.team1[1]],
+      [match.team2[0], match.team2[1]]
+    ];
+    pairings.forEach(([one, two]) => {
+      if (partnerHistory.has([one, two].sort().join('::'))) score += 100;
+    });
+    match.team1.forEach((one) => match.team2.forEach((two) => {
+      if (opponentHistory.has([one, two].sort().join('::'))) score += 10;
+    }));
+  });
+  return score;
+}
+
+function buildSchedule(players, roundsCount, courts) {
+  const partnerHistory = new Set();
+  const opponentHistory = new Set();
+  const rounds = {};
+  const matchRows = [];
+
+  for (let round = 1; round <= roundsCount; round += 1) {
+    let bestMatches = [];
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let shift = 0; shift < players.length; shift += 1) {
+      for (const reverse of [false, true]) {
+        const candidate = makeCandidate(players, round, courts, shift + round * 2, reverse);
+        const score = candidateScore(candidate, partnerHistory, opponentHistory);
+        if (score < bestScore) {
+          bestScore = score;
+          bestMatches = candidate;
+        }
+      }
+    }
+
+    rounds[round] = bestMatches.map((match, matchIndex) => ({
+      id: `local-r${round}-c${match.court}`,
+      courtName: `Court ${match.court}`,
+      badge: 'OPEN',
+      badgeColor: '#2563eb',
+      team1: {
+        name1: match.team1[0],
+        name2: match.team1[1],
+        avatar1: avatarUrl(match.team1[0]),
+        avatar2: avatarUrl(match.team1[1])
+      },
+      team2: {
+        name1: match.team2[0],
+        name2: match.team2[1],
+        avatar1: avatarUrl(match.team2[0]),
+        avatar2: avatarUrl(match.team2[1])
+      },
+      score1: '',
+      score2: '',
+      submitted: false,
+      matchIndex
+    }));
+
+    bestMatches.forEach((match) => {
+      partnerHistory.add([match.team1[0], match.team1[1]].sort().join('::'));
+      partnerHistory.add([match.team2[0], match.team2[1]].sort().join('::'));
+      match.team1.forEach((one) => match.team2.forEach((two) => {
+        opponentHistory.add([one, two].sort().join('::'));
+      }));
+      matchRows.push({
+        round_number: round,
+        court_number: match.court,
+        badge: 'OPEN',
+        team_a: match.team1,
+        team_b: match.team2,
+        score_a: 0,
+        score_b: 0,
+        is_completed: false
+      });
+    });
+  }
+
+  return { rounds, matchRows };
+}
+
+function calculateStandings(players, matches) {
+  const stats = {};
+  players.forEach((player) => {
+    const name = typeof player === 'string' ? player : player.name;
+    stats[name] = {
+      id: typeof player === 'string' ? name : player.id,
+      name,
+      w: 0,
+      l: 0,
+      pts: 0,
+      against: 0,
+      played: 0
+    };
+  });
+
+  matches.forEach((match) => {
+    if (!match.is_completed && !match.submitted) return;
+    const score1 = Number(match.score_a ?? match.score1 ?? 0);
+    const score2 = Number(match.score_b ?? match.score2 ?? 0);
+    const team1 = match.team_a || [match.team1?.name1, match.team1?.name2];
+    const team2 = match.team_b || [match.team2?.name1, match.team2?.name2];
+    team1.forEach((name) => {
+      if (!stats[name]) return;
+      stats[name].played += 1;
+      stats[name].pts += score1;
+      stats[name].against += score2;
+      if (score1 > score2) stats[name].w += 1;
+      if (score1 < score2) stats[name].l += 1;
+    });
+    team2.forEach((name) => {
+      if (!stats[name]) return;
+      stats[name].played += 1;
+      stats[name].pts += score2;
+      stats[name].against += score1;
+      if (score2 > score1) stats[name].w += 1;
+      if (score2 < score1) stats[name].l += 1;
+    });
+  });
+
+  return Object.values(stats)
+    .map((item) => ({ ...item, diff: item.pts - item.against }))
+    .sort((a, b) => b.pts - a.pts || b.diff - a.diff || b.w - a.w || a.name.localeCompare(b.name))
+    .map((item, index) => ({ ...item, pos: index + 1 }));
+}
+
+function mapRemoteMatch(match) {
+  const teamA = Array.isArray(match.team_a) ? match.team_a : [];
+  const teamB = Array.isArray(match.team_b) ? match.team_b : [];
+  return {
+    id: match.id,
+    courtName: `Court ${match.court_number}`,
+    badge: match.badge || 'OPEN',
+    badgeColor: match.badge === 'MIX' ? '#db2777' : '#2563eb',
+    team1: {
+      name1: teamA[0] || 'TBD',
+      name2: teamA[1] || 'TBD',
+      avatar1: avatarUrl(teamA[0]),
+      avatar2: avatarUrl(teamA[1])
+    },
+    team2: {
+      name1: teamB[0] || 'TBD',
+      name2: teamB[1] || 'TBD',
+      avatar1: avatarUrl(teamB[0]),
+      avatar2: avatarUrl(teamB[1])
+    },
+    score1: match.score_a === 0 && !match.is_completed ? '' : String(match.score_a ?? 0),
+    score2: match.score_b === 0 && !match.is_completed ? '' : String(match.score_b ?? 0),
+    submitted: Boolean(match.is_completed)
+  };
+}
 
 export default function PDLUPEngineApp() {
-  const [currentView, setCurrentView] = useState('HOME'); // 'HOME' | 'CREATE' | 'TOURNAMENT_DETAIL' | 'PROFILE'
+  const [currentView, setCurrentView] = useState('HOME');
   const [homeFilter, setHomeFilter] = useState('All');
-  const [detailTab, setDetailTab] = useState('MATCHES'); // 'MATCHES' | 'STANDINGS' | 'LOGS'
-
-  // Data Stores
+  const [detailTab, setDetailTab] = useState('MATCHES');
   const [tournaments, setTournaments] = useState([]);
   const [activeTournament, setActiveTournament] = useState(null);
   const [currentRound, setCurrentRound] = useState(1);
   const [roundsMatches, setRoundsMatches] = useState({});
   const [standings, setStandings] = useState([]);
   const [matchLogs, setMatchLogs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  // Form State "Create Tournament"
   const [formName, setFormName] = useState('');
   const [formMatchType, setFormMatchType] = useState('Americano');
-  const [formDate, setFormDate] = useState('Sept 1, 2026 • 11:00 AM');
   const [formCourts, setFormCourts] = useState(1);
-  const [formScoringType, setFormScoringType] = useState('Point Scoring');
-  const [formPoints, setFormPoints] = useState('21 Points');
+  const [formRounds, setFormRounds] = useState(8);
+  const [formPoints, setFormPoints] = useState('21');
   const [playerInput, setPlayerInput] = useState('');
   const [playersList, setPlayersList] = useState(['Thendri', 'Budi', 'Andi', 'Siti', 'Rian', 'Eka', 'Deni', 'Fani']);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Profile Data
-  const [userProfile] = useState({
-    name: 'Thendri',
-    role: 'Padel Community Organizer',
-    tournamentsCreated: 14,
-    matchesOrganized: 56,
-    coins: 10
-  });
+  const totalRounds = activeTournament?.totalRounds || 4;
+  const activeMatches = roundsMatches[currentRound] || [];
+  const filteredTournaments = useMemo(() => {
+    if (homeFilter === 'All') return tournaments;
+    return tournaments.filter((tournament) => tournament.status === homeFilter);
+  }, [homeFilter, tournaments]);
 
-  // Load Tournaments from Supabase or Local Fallback
   useEffect(() => {
     fetchTournaments();
   }, []);
 
-  const fetchTournaments = async () => {
-    if (supabase) {
-      const { data, error } = await supabase.from('tournaments').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) {
-        setTournaments(data);
-        return;
-      }
-    }
-  };
-
-  // Realtime Subscription Setup
   useEffect(() => {
-    if (supabase && activeTournament) {
-      const channel = supabase
-        .channel('realtime_matches')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${activeTournament.id}` }, (payload) => {
-          fetchMatchesAndStandings(activeTournament.id);
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
+    if (!supabase || !activeTournament) return undefined;
+    const channel = supabase
+      .channel(`matches-${activeTournament.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'matches',
+        filter: `tournament_id=eq.${activeTournament.id}`
+      }, () => fetchMatchesAndStandings(activeTournament.id))
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [activeTournament]);
 
-  const fetchMatchesAndStandings = async (tournamentId) => {
+  async function fetchTournaments() {
+    setIsLoading(true);
+    setErrorMessage('');
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('tournaments')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      setErrorMessage(`Gagal memuat tournament: ${error.message}`);
+    } else {
+      setTournaments((data || []).map(normalizeTournament));
+    }
+    setIsLoading(false);
+  }
+
+  async function fetchMatchesAndStandings(tournamentId) {
     if (!supabase) return;
-    
-    // Fetch Matches
-    const { data: matchesData } = await supabase.from('matches').select('*').eq('tournament_id', tournamentId);
-    if (matchesData) {
-      const grouped = {};
-      matchesData.forEach(m => {
-        if (!grouped[m.round_number]) grouped[m.round_number] = [];
-        grouped[m.round_number].push({
-          id: m.id,
-          courtName: `Court ${m.court_number}`,
-          badge: m.badge || 'OPEN',
-          badgeColor: m.badge === 'MIX' ? '#ec4899' : '#2563eb',
-          team1: { name1: m.team_a[0], name2: m.team_a[1], avatar1: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.team_a[0]}`, avatar2: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.team_a[1]}` },
-          team2: { name1: m.team_b[0], name2: m.team_b[1], avatar1: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.team_b[0]}`, avatar2: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.team_b[1]}` },
-          score1: m.score_a === 0 && !m.is_completed ? '' : m.score_a.toString(),
-          score2: m.score_b === 0 && !m.is_completed ? '' : m.score_b.toString(),
-          submitted: m.is_completed
-        });
-      });
-      setRoundsMatches(grouped);
-    }
-
-    // Fetch Players / Standings
-    const { data: playersData } = await supabase.from('players').select('*').eq('tournament_id', tournamentId).order('points_for', { ascending: false });
-    if (playersData) {
-      const formattedStandings = playersData.map((p, idx) => ({
-        pos: idx + 1,
-        id: p.id,
-        name: p.name,
-        w: p.wins,
-        l: p.matches_played - p.wins,
-        pts: p.points_for,
-        diff: (p.points_for - p.points_against) > 0 ? `+${p.points_for - p.points_against}` : `${p.points_for - p.points_against}`
-      }));
-      setStandings(formattedStandings);
-    }
-  };
-
-  // Add & Remove Players
-  const handleAddPlayer = () => {
-    if (playerInput.trim() !== '') {
-      setPlayersList([...playersList, playerInput.trim()]);
-      setPlayerInput('');
-    }
-  };
-
-  const handleRemovePlayer = (index) => {
-    setPlayersList(playersList.filter((_, i) => i !== index));
-  };
-
-  // ALGORITMA MATEMATIK AMERICANO & MEXICANO GENERATOR
-  const handleCreateTournamentSubmit = async (e) => {
-    e.preventDefault();
-    if (playersList.length < 4) {
-      alert("Masukkan minimal 4 pemain!");
+    const [{ data: matchesData, error: matchesError }, { data: playersData, error: playersError }] = await Promise.all([
+      supabase.from('matches').select('*').eq('tournament_id', tournamentId).order('round_number').order('court_number'),
+      supabase.from('players').select('*').eq('tournament_id', tournamentId).order('name')
+    ]);
+    if (matchesError || playersError) {
+      setErrorMessage(matchesError?.message || playersError?.message || 'Gagal memuat data tournament.');
       return;
     }
-
-    const tName = formName.trim() || 'New Tournament';
-    const totalRoundsCount = 4;
-    const targetPts = parseInt(formPoints) || 21;
-
-    let createdTourneyId = `t-${Date.now()}`;
-
-    // 1. Simpan ke Supabase jika terhubung
-    if (supabase) {
-      const { data: tourneyData, error } = await supabase.from('tournaments').insert([{
-        name: tName,
-        match_type: formMatchType,
-        target_points: targetPts,
-        court_count: formCourts
-      }]).select().single();
-
-      if (!error && tourneyData) {
-        createdTourneyId = tourneyData.id;
-
-        // Insert Players
-        const playerInserts = playersList.map(name => ({
-          tournament_id: createdTourneyId,
-          name,
-          matches_played: 0,
-          wins: 0,
-          points_for: 0,
-          points_against: 0
-        }));
-        await supabase.from('players').insert(playerInserts);
-      }
-    }
-
-    // 2. Build Rounds Engine
-    const generatedRounds = {};
-    const matchInsertsSupabase = [];
-
-    for (let r = 1; r <= totalRoundsCount; r++) {
-      const shuffled = [...playersList].sort(() => Math.random() - 0.5);
-      const courtMatches = [];
-
-      for (let c = 0; c < formCourts; c++) {
-        const offset = c * 4;
-        if (offset + 3 < shuffled.length) {
-          const t1 = [shuffled[offset], shuffled[offset + 1]];
-          const t2 = [shuffled[offset + 2], shuffled[offset + 3]];
-
-          courtMatches.push({
-            id: `r${r}-c${c + 1}`,
-            courtName: `Court ${c + 1}`,
-            badge: formMatchType.toUpperCase().includes('MIX') ? 'MIX' : 'OPEN',
-            badgeColor: formMatchType.toUpperCase().includes('MIX') ? '#ec4899' : '#2563eb',
-            team1: { name1: t1[0], name2: t1[1], avatar1: `https://api.dicebear.com/7.x/avataaars/svg?seed=${t1[0]}`, avatar2: `https://api.dicebear.com/7.x/avataaars/svg?seed=${t1[1]}` },
-            team2: { name1: t2[0], name2: t2[1], avatar1: `https://api.dicebear.com/7.x/avataaars/svg?seed=${t2[0]}`, avatar2: `https://api.dicebear.com/7.x/avataaars/svg?seed=${t2[1]}` },
-            score1: '',
-            score2: '',
-            submitted: false
-          });
-
-          if (supabase) {
-            matchInsertsSupabase.push({
-              tournament_id: createdTourneyId,
-              round_number: r,
-              court_number: c + 1,
-              badge: formMatchType.toUpperCase().includes('MIX') ? 'MIX' : 'OPEN',
-              team_a: t1,
-              team_b: t2,
-              score_a: 0,
-              score_b: 0,
-              is_completed: false
-            });
-          }
-        }
-      }
-      generatedRounds[r] = courtMatches;
-    }
-
-    if (supabase && matchInsertsSupabase.length > 0) {
-      await supabase.from('matches').insert(matchInsertsSupabase);
-    }
-
-    const newTourneyObj = {
-      id: createdTourneyId,
-      name: tName,
-      matchType: formMatchType,
-      date: formDate,
-      courts: formCourts,
-      playersCount: playersList.length,
-      status: 'Active',
-      currentRound: 1,
-      totalRounds: totalRoundsCount
-    };
-
-    setTournaments([newTourneyObj, ...tournaments]);
-    setActiveTournament(newTourneyObj);
-    setRoundsMatches(generatedRounds);
-    
-    // Initial Standings Local Fallback
-    const initStandings = playersList.map((name, i) => ({
-      pos: i + 1,
-      name,
-      w: 0,
-      l: 0,
-      pts: 0,
-      diff: '0'
-    }));
-    setStandings(initStandings);
-
-    setCurrentRound(1);
-    setCurrentView('TOURNAMENT_DETAIL');
-  };
-
-  // Score Input Change
-  const handleScoreChange = (matchId, team, val) => {
-    const activeMatches = roundsMatches[currentRound] || [];
-    const updated = activeMatches.map(m => m.id === matchId ? { ...m, [team]: val } : m);
-    setRoundsMatches({ ...roundsMatches, [currentRound]: updated });
-  };
-
-  // Submit Score & Recalculate Standings Realtime
-  const handleSubmitScore = async (matchId) => {
-    const activeMatches = roundsMatches[currentRound] || [];
-    const match = activeMatches.find(m => m.id === matchId);
-
-    if (!match || match.score1 === '' || match.score2 === '') {
-      alert("Masukkan skor kedua tim terlebih dahulu!");
-      return;
-    }
-
-    const s1 = parseInt(match.score1) || 0;
-    const s2 = parseInt(match.score2) || 0;
-
-    // Local State Lock
-    const updatedMatches = activeMatches.map(m => m.id === matchId ? { ...m, submitted: true } : m);
-    setRoundsMatches({ ...roundsMatches, [currentRound]: updatedMatches });
-
-    // Sync to Supabase Database
-    if (supabase && activeTournament) {
-      await supabase.from('matches').update({
-        score_a: s1,
-        score_b: s2,
-        is_completed: true
-      }).eq('id', matchId);
-    }
-
-    // Recalculate Standings Local Engine
-    const t1P = [match.team1.name1, match.team1.name2];
-    const t2P = [match.team2.name1, match.team2.name2];
-
-    setStandings(prev => {
-      const updated = prev.map(p => {
-        let newP = { ...p };
-        if (t1P.includes(p.name)) {
-          newP.pts += s1;
-          if (s1 > s2) newP.w += 1;
-          else if (s2 > s1) newP.l += 1;
-        } else if (t2P.includes(p.name)) {
-          newP.pts += s2;
-          if (s2 > s1) newP.w += 1;
-          else if (s1 > s2) newP.l += 1;
-        }
-        return newP;
-      }).sort((a, b) => b.pts - a.pts || b.w - a.w);
-
-      return updated.map((item, index) => ({ ...item, pos: index + 1 }));
+    const grouped = {};
+    (matchesData || []).forEach((match) => {
+      if (!grouped[match.round_number]) grouped[match.round_number] = [];
+      grouped[match.round_number].push(mapRemoteMatch(match));
     });
+    setRoundsMatches(grouped);
+    setStandings(calculateStandings((playersData || []).map((player) => ({ id: player.id, name: player.name })), matchesData || []));
+  }
 
-    const logEntry = `Round ${currentRound} (${match.courtName}): ${t1P.join(' & ')} [${s1} - ${s2}] ${t2P.join(' & ')}`;
-    setMatchLogs([logEntry, ...matchLogs]);
-  };
+  function handleAddPlayer() {
+    const name = playerInput.trim();
+    if (!name) return;
+    if (playersList.some((player) => player.toLowerCase() === name.toLowerCase())) {
+      setErrorMessage('Nama pemain tersebut sudah ada.');
+      return;
+    }
+    setPlayersList((current) => [...current, name]);
+    setPlayerInput('');
+    setErrorMessage('');
+  }
+
+  function handleRemovePlayer(index) {
+    setPlayersList((current) => current.filter((_, playerIndex) => playerIndex !== index));
+  }
+
+  async function handleCreateTournamentSubmit(event) {
+    event.preventDefault();
+    setErrorMessage('');
+    const name = formName.trim() || 'New Tournament';
+    const courts = clamp(Number(formCourts) || 1, 1, 20);
+    const rounds = clamp(Number(formRounds) || 1, 1, 30);
+    const targetPoints = clamp(Number(formPoints) || 21, 1, 99);
+    if (playersList.length < 4) {
+      setErrorMessage('Tambahkan minimal 4 pemain untuk membuat tournament.');
+      return;
+    }
+    if (playersList.length < courts * 4) {
+      setErrorMessage(`Jumlah pemain belum cukup untuk ${courts} court. Tambahkan minimal ${courts * 4} pemain.`);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const schedule = buildSchedule(playersList, rounds, courts);
+      let tournamentId = `local-${Date.now()}`;
+      let savedMatches = [];
+
+      if (supabase) {
+        const { data: tournamentData, error: tournamentError } = await supabase
+          .from('tournaments')
+          .insert([{
+            name,
+            match_type: formMatchType,
+            target_points: targetPoints,
+            court_count: courts,
+            total_rounds: rounds,
+            status: 'Active'
+          }])
+          .select()
+          .single();
+        if (tournamentError) throw tournamentError;
+        tournamentId = tournamentData.id;
+
+        const { error: playersError } = await supabase.from('players').insert(
+          playersList.map((playerName) => ({
+            tournament_id: tournamentId,
+            name: playerName,
+            matches_played: 0,
+            wins: 0,
+            points_for: 0,
+            points_against: 0
+          }))
+        );
+        if (playersError) throw playersError;
+
+        const { data: matchData, error: matchesError } = await supabase
+          .from('matches')
+          .insert(schedule.matchRows.map((row) => ({ ...row, tournament_id: tournamentId })))
+          .select();
+        if (matchesError) throw matchesError;
+        savedMatches = matchData || [];
+      }
+
+      const localRounds = { ...schedule.rounds };
+      if (savedMatches.length) {
+        savedMatches.forEach((remoteMatch) => {
+          const roundMatches = localRounds[remoteMatch.round_number] || [];
+          const localMatch = roundMatches.find((match) => match.courtName === `Court ${remoteMatch.court_number}`);
+          if (localMatch) localMatch.id = remoteMatch.id;
+        });
+      }
+
+      const newTournament = normalizeTournament({
+        id: tournamentId,
+        name,
+        match_type: formMatchType,
+        court_count: courts,
+        total_rounds: rounds,
+        players_count: playersList.length,
+        status: 'Active',
+        created_at: new Date().toISOString()
+      });
+      setTournaments((current) => [newTournament, ...current.filter((item) => item.id !== tournamentId)]);
+      setActiveTournament(newTournament);
+      setRoundsMatches(localRounds);
+      setStandings(calculateStandings(playersList, []));
+      setMatchLogs([]);
+      setCurrentRound(1);
+      setDetailTab('MATCHES');
+      setCurrentView('TOURNAMENT_DETAIL');
+      if (supabase) await fetchMatchesAndStandings(tournamentId);
+    } catch (error) {
+      setErrorMessage(error.message || 'Tournament gagal dibuat.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleScoreChange(matchId, team, value) {
+    if (!/^\d*$/.test(value)) return;
+    setRoundsMatches((current) => ({
+      ...current,
+      [currentRound]: (current[currentRound] || []).map((match) => match.id === matchId ? { ...match, [team]: value } : match)
+    }));
+  }
+
+  async function handleSubmitScore(matchId) {
+    const match = activeMatches.find((item) => item.id === matchId);
+    if (!match || match.score1 === '' || match.score2 === '') {
+      setErrorMessage('Masukkan skor kedua tim terlebih dahulu.');
+      return;
+    }
+    const score1 = Number(match.score1);
+    const score2 = Number(match.score2);
+    const targetPoints = Number(activeTournament?.target_points || formPoints || 21);
+    if (score1 < 0 || score2 < 0 || score1 > 99 || score2 > 99 || score1 === score2) {
+      setErrorMessage('Skor harus valid dan tidak boleh seri.');
+      return;
+    }
+    if (score1 > targetPoints + 30 || score2 > targetPoints + 30) {
+      setErrorMessage(`Skor terlihat terlalu besar untuk target ${targetPoints} poin.`);
+      return;
+    }
+
+    setErrorMessage('');
+    if (supabase && activeTournament && !String(match.id).startsWith('local-')) {
+      const { error } = await supabase.from('matches').update({
+        score_a: score1,
+        score_b: score2,
+        is_completed: true
+      }).eq('id', match.id);
+      if (error) {
+        setErrorMessage(`Skor gagal disimpan: ${error.message}`);
+        return;
+      }
+      await fetchMatchesAndStandings(activeTournament.id);
+    } else {
+      const updated = activeMatches.map((item) => item.id === matchId
+        ? { ...item, score1: String(score1), score2: String(score2), submitted: true }
+        : item);
+      const nextRounds = { ...roundsMatches, [currentRound]: updated };
+      setRoundsMatches(nextRounds);
+      setStandings(calculateStandings(playersList, Object.values(nextRounds).flat()));
+    }
+
+    const team1 = `${match.team1.name1} & ${match.team1.name2}`;
+    const team2 = `${match.team2.name1} & ${match.team2.name2}`;
+    setMatchLogs((current) => [`Round ${currentRound} · ${match.courtName} · ${team1} ${score1}–${score2} ${team2}`, ...current]);
+  }
+
+  function openTournament(tournament) {
+    const normalized = normalizeTournament(tournament);
+    setActiveTournament(normalized);
+    setCurrentRound(1);
+    setDetailTab('MATCHES');
+    setCurrentView('TOURNAMENT_DETAIL');
+    fetchMatchesAndStandings(normalized.id);
+  }
+
+  function goHome() {
+    setCurrentView('HOME');
+    setActiveTournament(null);
+    setErrorMessage('');
+  }
 
   return (
-    <div style={{ backgroundColor: '#f3f4f6', color: '#1f2937', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', paddingBottom: '75px' }}>
-      
-      {/* 1. TOP NAVBAR */}
-      <header style={{ backgroundColor: '#2563eb', color: '#ffffff', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 30, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setCurrentView('HOME')}>
-          <div style={{ backgroundColor: '#ffffff', color: '#2563eb', padding: '6px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>📍</span>
-          </div>
-          <div>
-            <h1 style={{ fontSize: '18px', fontWeight: '800', margin: 0, letterSpacing: '-0.5px' }}>PDLUP</h1>
-            <p style={{ fontSize: '10px', margin: 0, opacity: 0.9, fontWeight: '500' }}>Padel Matchmaker</p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {currentView === 'TOURNAMENT_DETAIL' && (
-            <button onClick={() => setCurrentView('HOME')} style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-              ← Tournaments
-            </button>
-          )}
-          <button style={{ backgroundColor: 'transparent', border: 'none', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>⚙️</button>
+    <main className="app-shell">
+      <header className="topbar">
+        <button className="brand" onClick={goHome} aria-label="Kembali ke home">
+          <span className="brand-mark">P</span>
+          <span>
+            <strong>PDLUP</strong>
+            <small>Padel Matchmaker</small>
+          </span>
+        </button>
+        <div className="topbar-actions">
+          {currentView === 'TOURNAMENT_DETAIL' && <button className="ghost-button" onClick={goHome}>← Tournaments</button>}
+          <button className="icon-button" aria-label="Settings">⚙</button>
         </div>
       </header>
 
-      {/* 2. SCREEN 1: HOME */}
+      {errorMessage && (
+        <div className="alert alert-error" role="alert">
+          <span>!</span>
+          <span>{errorMessage}</span>
+          <button onClick={() => setErrorMessage('')} aria-label="Tutup notifikasi">×</button>
+        </div>
+      )}
+
       {currentView === 'HOME' && (
-        <div style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {['All', 'Active', 'Past'].map(filter => (
-                <button
-                  key={filter}
-                  onClick={() => setHomeFilter(filter)}
-                  style={{
-                    padding: '6px 16px',
-                    borderRadius: '20px',
-                    border: 'none',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    backgroundColor: homeFilter === filter ? '#2563eb' : '#e5e7eb',
-                    color: homeFilter === filter ? '#ffffff' : '#4b5563'
-                  }}>
-                  {filter}
+        <section className="page-container home-page">
+          <div className="page-heading">
+            <div>
+              <p className="eyebrow">WELCOME BACK</p>
+              <h1>Your next rally starts here.</h1>
+              <p className="muted">Create balanced matches, track scores, and keep the group moving.</p>
+            </div>
+            <button className="primary-button" onClick={() => setCurrentView('CREATE')}>＋ Create Tournament</button>
+          </div>
+
+          <div className="filter-row" role="tablist" aria-label="Filter tournaments">
+            {['All', 'Active', 'Past'].map((filter) => (
+              <button key={filter} className={`filter-pill ${homeFilter === filter ? 'active' : ''}`} onClick={() => setHomeFilter(filter)}>{filter}</button>
+            ))}
+          </div>
+
+          {isLoading ? (
+            <div className="empty-card loading-card"><span className="spinner" /> Loading tournaments…</div>
+          ) : filteredTournaments.length === 0 ? (
+            <div className="empty-card">
+              <div className="empty-icon">🎾</div>
+              <h2>{homeFilter === 'All' ? 'No tournaments yet' : `No ${homeFilter.toLowerCase()} tournaments`}</h2>
+              <p>{homeFilter === 'All' ? 'Create your first padel match to start live scoring.' : 'Try another filter or create a new tournament.'}</p>
+              <button className="primary-button" onClick={() => setCurrentView('CREATE')}>＋ Create Tournament</button>
+            </div>
+          ) : (
+            <div className="tournament-grid">
+              {filteredTournaments.map((tournament) => (
+                <button className="tournament-card" key={tournament.id} onClick={() => openTournament(tournament)}>
+                  <span className={`status-dot ${tournament.status === 'Past' ? 'past' : ''}`} />
+                  <span className="tournament-card-body">
+                    <strong>{tournament.name}</strong>
+                    <span>{tournament.matchType} · {tournament.courts} court · {tournament.totalRounds} rounds</span>
+                    <small>{tournament.playersCount || '—'} players · {tournament.status}</small>
+                  </span>
+                  <span className="card-arrow">→</span>
                 </button>
               ))}
             </div>
-          </div>
-
-          {tournaments.length === 0 ? (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '48px 20px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '40px', marginBottom: '12px' }}>🎾</div>
-              <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 6px 0', color: '#111827' }}>No Tournaments Yet</h3>
-              <p style={{ color: '#6b7280', fontSize: '13px', margin: '0 0 16px 0' }}>Create your first padel match to start live scoring.</p>
-              <button 
-                onClick={() => setCurrentView('CREATE')}
-                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                + Create Tournament
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {tournaments.filter(t => homeFilter === 'All' || t.status === homeFilter).map(t => (
-                <div 
-                  key={t.id}
-                  onClick={() => { setActiveTournament(t); fetchMatchesAndStandings(t.id); setCurrentView('TOURNAMENT_DETAIL'); }}
-                  style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#111827' }}>{t.name}</h2>
-                    <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>{t.match_type || t.matchType} • {t.court_count || t.courts} Courts • {t.playersCount || 8} Players</p>
-                    <p style={{ fontSize: '11px', color: '#9ca3af', margin: '4px 0 0 0' }}>📅 {t.date || 'Sept 1, 2026'}</p>
-                  </div>
-                  <div style={{ fontSize: '18px', color: '#9ca3af' }}>›</div>
-                </div>
-              ))}
-            </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* 3. SCREEN 2: CREATE TOURNAMENT FORM */}
       {currentView === 'CREATE' && (
-        <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px 16px' }}>
-          <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-              <span>🏆</span> Create Tournament
-            </h2>
+        <section className="page-container narrow-page">
+          <div className="page-heading compact-heading">
+            <div>
+              <p className="eyebrow">SETUP</p>
+              <h1>Create tournament</h1>
+              <p className="muted">Set the rules once. We’ll handle the rotation.</p>
+            </div>
           </div>
 
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-            <form onSubmit={handleCreateTournamentSubmit}>
-              
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Tournament Name</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. Friday Tournament"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', boxSizing: 'border-box', outline: 'none' }}
-                />
-              </div>
+          <form className="form-card" onSubmit={handleCreateTournamentSubmit}>
+            <div className="form-section">
+              <label htmlFor="tournament-name">Tournament name</label>
+              <input id="tournament-name" value={formName} onChange={(event) => setFormName(event.target.value)} placeholder="e.g. Friday Night Padel" />
+            </div>
 
-              <div style={{ marginBottom: '16px', position: 'relative' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Match Type</label>
-                <div 
-                  onClick={() => setShowTypeDropdown(!showTypeDropdown)}
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
-                  <span>{formMatchType}</span>
-                  <span style={{ fontSize: '12px', color: '#6b7280' }}>▼</span>
-                </div>
-
-                {showTypeDropdown && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 40, marginTop: '4px', maxHeight: '250px', overflowY: 'auto', padding: '6px' }}>
-                    {[
-                      { title: 'Americano', desc: 'Individual rotation. Play with & against everyone.' },
-                      { title: 'Team Americano', desc: 'Fixed teams. Play against all teams.' },
-                      { title: 'Mix Americano', desc: 'Mixed teams (👨👩). Play with & against everyone.' },
-                      { title: 'Mexicano', desc: 'Balanced matches each round based on ranking.' },
-                      { title: 'Team Mexicano', desc: 'Fixed teams. Balanced matchups each round.' }
-                    ].map((item, idx) => (
-                      <div 
-                        key={idx}
-                        onClick={() => { setFormMatchType(item.title); setShowTypeDropdown(false); }}
-                        style={{ padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#111827' }}>{item.title}</div>
-                        <div style={{ fontSize: '11px', color: '#6b7280' }}>{item.desc}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Number of Courts</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <button type="button" onClick={() => setFormCourts(Math.max(1, formCourts - 1))} style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#e5e7eb', fontWeight: 'bold', fontSize: '18px', cursor: 'pointer' }}>-</button>
-                  <span style={{ fontSize: '16px', fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{formCourts}</span>
-                  <button type="button" onClick={() => setFormCourts(formCourts + 1)} style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#e5e7eb', fontWeight: 'bold', fontSize: '18px', cursor: 'pointer' }}>+</button>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '18px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>
-                  Add Players ({playersList.length})
-                </label>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                  <input 
-                    type="text"
-                    placeholder="Type a name..."
-                    value={playerInput}
-                    onChange={(e) => setPlayerInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddPlayer())}
-                    style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }}
-                  />
-                  <button type="button" onClick={handleAddPlayer} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '0 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>👤+</button>
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', backgroundColor: '#f9fafb', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6', minHeight: '40px' }}>
-                  {playersList.map((p, i) => (
-                    <span key={i} style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {p}
-                      <span onClick={() => handleRemovePlayer(i)} style={{ cursor: 'pointer', fontWeight: 'bold', color: '#93c5fd' }}>×</span>
-                    </span>
+            <div className="form-section">
+              <label>Match type</label>
+              <button type="button" className="select-control" onClick={() => setShowTypeDropdown((value) => !value)}>
+                <span><strong>{formMatchType}</strong><small>{MATCH_TYPES.find((item) => item.title === formMatchType)?.desc}</small></span>
+                <span>⌄</span>
+              </button>
+              {showTypeDropdown && (
+                <div className="type-menu">
+                  {MATCH_TYPES.map((item) => (
+                    <button type="button" key={item.title} onClick={() => { setFormMatchType(item.title); setShowTypeDropdown(false); }}>
+                      <strong>{item.title}</strong><small>{item.desc}</small>
+                    </button>
                   ))}
                 </div>
+              )}
+            </div>
+
+            <div className="form-grid">
+              <div className="form-section">
+                <label htmlFor="courts">Courts</label>
+                <div className="stepper">
+                  <button type="button" onClick={() => setFormCourts((value) => clamp(value - 1, 1, 20))}>−</button>
+                  <input id="courts" type="number" min="1" max="20" value={formCourts} onChange={(event) => setFormCourts(clamp(Number(event.target.value) || 1, 1, 20))} />
+                  <button type="button" onClick={() => setFormCourts((value) => clamp(value + 1, 1, 20))}>＋</button>
+                </div>
+                <small className="helper-text">4 players per court</small>
               </div>
+              <div className="form-section">
+                <label htmlFor="rounds">Number of rounds</label>
+                <input id="rounds" type="number" min="1" max="30" value={formRounds} onChange={(event) => setFormRounds(clamp(Number(event.target.value) || 1, 1, 30))} />
+                <small className="helper-text">Up to 30 rounds</small>
+              </div>
+            </div>
 
-              <button 
-                type="submit"
-                style={{ width: '100%', backgroundColor: '#2563eb', color: '#ffffff', fontWeight: 'bold', fontSize: '15px', padding: '14px', borderRadius: '10px', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
-                + Create Tournament
-              </button>
+            <div className="form-grid">
+              <div className="form-section">
+                <label htmlFor="points">Target points</label>
+                <input id="points" type="number" min="1" max="99" value={formPoints} onChange={(event) => setFormPoints(event.target.value)} />
+              </div>
+              <div className="form-section rule-preview">
+                <label>Schedule preview</label>
+                <strong>{formRounds} rounds · {formCourts} {formCourts === 1 ? 'court' : 'courts'}</strong>
+                <small>{formRounds * formCourts} matches will be created</small>
+              </div>
+            </div>
 
-            </form>
-          </div>
-        </div>
+            <div className="form-section">
+              <div className="label-row"><label htmlFor="player-name">Players</label><span className="count-badge">{playersList.length}</span></div>
+              <div className="add-player-row">
+                <input id="player-name" value={playerInput} onChange={(event) => setPlayerInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); handleAddPlayer(); } }} placeholder="Type a name and press Enter" />
+                <button type="button" className="secondary-button" onClick={handleAddPlayer}>＋ Add</button>
+              </div>
+              <div className="player-chips">
+                {playersList.map((player, index) => (
+                  <span className="player-chip" key={`${player}-${index}`}>
+                    <img src={avatarUrl(player)} alt="" />{player}<button type="button" onClick={() => handleRemovePlayer(index)} aria-label={`Remove ${player}`}>×</button>
+                  </span>
+                ))}
+              </div>
+              <small className="helper-text">Minimum 4 players. Add at least {formCourts * 4} for the selected courts.</small>
+            </div>
+
+            <button className="primary-button submit-button" type="submit" disabled={isSaving}>{isSaving ? 'Creating schedule…' : '＋ Create Tournament'}</button>
+          </form>
+        </section>
       )}
 
-      {/* 4. SCREEN 3: ACTIVE TOURNAMENT DETAIL */}
       {currentView === 'TOURNAMENT_DETAIL' && activeTournament && (
-        <div style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px' }}>
-          
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#111827' }}>{activeTournament.name}</h2>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>{activeTournament.match_type || activeTournament.matchType} • {activeTournament.court_count || activeTournament.courts} Courts</p>
-              </div>
-              <span style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', fontSize: '11px', fontWeight: 'bold', padding: '4px 10px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
-                Round {currentRound} of {activeTournament.totalRounds || 4}
-              </span>
+        <section className="page-container detail-page">
+          <div className="detail-hero">
+            <div>
+              <p className="eyebrow">LIVE TOURNAMENT</p>
+              <h1>{activeTournament.name}</h1>
+              <p className="muted">{activeTournament.matchType} · {activeTournament.courts} {activeTournament.courts === 1 ? 'court' : 'courts'} · {activeTournament.totalRounds} rounds</p>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', backgroundColor: '#f9fafb', padding: '8px 12px', borderRadius: '8px', border: '1px solid #f3f4f6' }}>
-              <button disabled={currentRound === 1} onClick={() => setCurrentRound(currentRound - 1)} style={{ border: 'none', background: 'transparent', color: currentRound === 1 ? '#9ca3af' : '#2563eb', fontWeight: 'bold', fontSize: '12px', cursor: currentRound === 1 ? 'default' : 'pointer' }}>◀ Prev</button>
-              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1f2937' }}>ROUND {currentRound}</span>
-              <button disabled={currentRound === (activeTournament.totalRounds || 4)} onClick={() => setCurrentRound(currentRound + 1)} style={{ border: 'none', background: 'transparent', color: currentRound === (activeTournament.totalRounds || 4) ? '#9ca3af' : '#2563eb', fontWeight: 'bold', fontSize: '12px', cursor: currentRound === (activeTournament.totalRounds || 4) ? 'default' : 'pointer' }}>Next ▶</button>
-            </div>
+            <span className="live-badge"><i /> {activeTournament.status}</span>
           </div>
 
-          <div style={{ display: 'flex', backgroundColor: '#e5e7eb', padding: '3px', borderRadius: '10px', marginBottom: '16px' }}>
-            {['MATCHES', 'STANDINGS', 'LOGS'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setDetailTab(tab)}
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  backgroundColor: detailTab === tab ? '#ffffff' : 'transparent',
-                  color: detailTab === tab ? '#111827' : '#6b7280',
-                  boxShadow: detailTab === tab ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-                }}>
-                {tab}
-              </button>
+          <div className="round-nav">
+            <button disabled={currentRound === 1} onClick={() => setCurrentRound((value) => value - 1)}>← Previous</button>
+            <div><small>ROUND</small><strong>{currentRound} <span>/ {totalRounds}</span></strong></div>
+            <button disabled={currentRound === totalRounds} onClick={() => setCurrentRound((value) => value + 1)}>Next →</button>
+          </div>
+
+          <div className="detail-tabs" role="tablist">
+            {[
+              ['MATCHES', 'Live matches'],
+              ['STANDINGS', 'Leaderboard'],
+              ['LOGS', 'Activity']
+            ].map(([tab, label]) => (
+              <button key={tab} className={detailTab === tab ? 'active' : ''} onClick={() => setDetailTab(tab)}>{label}</button>
             ))}
           </div>
 
           {detailTab === 'MATCHES' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {(roundsMatches[currentRound] || []).map(m => (
-                <div key={m.id} style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: m.submitted ? '1px solid #2563eb' : '1px solid #e5e7eb' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>{m.courtName}</span>
-                    <span style={{ backgroundColor: m.badgeColor, color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>{m.badge}</span>
+            <div className="match-grid">
+              {activeMatches.length === 0 ? (
+                <div className="empty-card"><div className="empty-icon">🗓️</div><h2>No matches in this round</h2><p>This round is not available in the database yet.</p></div>
+              ) : activeMatches.map((match) => (
+                <article className={`match-card ${match.submitted ? 'completed' : ''}`} key={match.id}>
+                  <div className="match-card-header"><span>{match.courtName}</span><span className="match-type-badge" style={{ backgroundColor: match.badgeColor }}>{match.badge}</span></div>
+                  <div className="team-row">
+                    <div className="team-info"><div className="avatar-stack"><img src={match.team1.avatar1} alt="" /><img src={match.team1.avatar2} alt="" /></div><strong>{match.team1.name1} <em>&</em> {match.team1.name2}</strong></div>
+                    <input aria-label={`Score ${match.team1.name1} ${match.team1.name2}`} type="text" inputMode="numeric" value={match.score1} disabled={match.submitted} onChange={(event) => handleScoreChange(match.id, 'score1', event.target.value)} placeholder="0" />
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', padding: '10px 12px', borderRadius: '10px', marginBottom: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ display: 'flex' }}>
-                        <img src={m.team1.avatar1} alt="p1" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #2563eb' }} />
-                        <img src={m.team1.avatar2} alt="p2" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #2563eb', marginLeft: '-8px' }} />
-                      </div>
-                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#111827' }}>{m.team1.name1} & {m.team1.name2}</span>
-                    </div>
-                    <input 
-                      type="number" 
-                      value={m.score1} 
-                      disabled={m.submitted}
-                      onChange={(e) => handleScoreChange(m.id, 'score1', e.target.value)}
-                      placeholder="0"
-                      style={{ width: '44px', height: '44px', textAlign: 'center', fontSize: '18px', fontWeight: 'bold', borderRadius: '8px', border: '1px solid #2563eb', outline: 'none', color: '#2563eb' }}
-                    />
+                  <div className="versus"><span />VS<span /></div>
+                  <div className="team-row">
+                    <div className="team-info"><div className="avatar-stack"><img src={match.team2.avatar1} alt="" /><img src={match.team2.avatar2} alt="" /></div><strong>{match.team2.name1} <em>&</em> {match.team2.name2}</strong></div>
+                    <input aria-label={`Score ${match.team2.name1} ${match.team2.name2}`} type="text" inputMode="numeric" value={match.score2} disabled={match.submitted} onChange={(event) => handleScoreChange(match.id, 'score2', event.target.value)} placeholder="0" />
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', padding: '10px 12px', borderRadius: '10px', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ display: 'flex' }}>
-                        <img src={m.team2.avatar1} alt="p3" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #6b7280' }} />
-                        <img src={m.team2.avatar2} alt="p4" style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #6b7280', marginLeft: '-8px' }} />
-                      </div>
-                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#111827' }}>{m.team2.name1} & {m.team2.name2}</span>
-                    </div>
-                    <input 
-                      type="number" 
-                      value={m.score2} 
-                      disabled={m.submitted}
-                      onChange={(e) => handleScoreChange(m.id, 'score2', e.target.value)}
-                      placeholder="0"
-                      style={{ width: '44px', height: '44px', textAlign: 'center', fontSize: '18px', fontWeight: 'bold', borderRadius: '8px', border: '1px solid #d1d5db', outline: 'none', color: '#111827' }}
-                    />
+                  <div className="match-card-footer">
+                    <span className={match.submitted ? 'complete-text' : 'pending-text'}>{match.submitted ? '● Score submitted' : '○ Waiting for score'}</span>
+                    {!match.submitted && <button className="save-score-button" onClick={() => handleSubmitScore(match.id)}>Save score</button>}
                   </div>
-
-                  <button 
-                    onClick={() => handleSubmitScore(m.id)}
-                    disabled={m.submitted}
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '13px', cursor: m.submitted ? 'default' : 'pointer', backgroundColor: m.submitted ? '#e5e7eb' : '#2563eb', color: m.submitted ? '#9ca3af' : '#fff' }}>
-                    {m.submitted ? '✓ SCORE SUBMITTED' : 'SUBMIT SCORE'}
-                  </button>
-                </div>
+                </article>
               ))}
             </div>
           )}
 
           {detailTab === 'STANDINGS' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-              <div style={{ textAlign: 'center', padding: '12px 0 20px 0', borderBottom: '1px solid #f3f4f6', marginBottom: '16px' }}>
-                <span style={{ fontSize: '32px' }}>🏆</span>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '4px 0 0 0', color: '#1e3a8a' }}>{standings[0]?.name || 'Leader'}</h3>
-                <p style={{ fontSize: '11px', color: '#6b7280', margin: 0 }}>Tournament Champion</p>
-              </div>
-
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #e5e7eb', color: '#6b7280', textAlign: 'left' }}>
-                    <th style={{ padding: '8px' }}>#</th>
-                    <th style={{ padding: '8px' }}>Player</th>
-                    <th style={{ padding: '8px', textAlign: 'center' }}>W-L</th>
-                    <th style={{ padding: '8px', textAlign: 'center' }}>DIFF</th>
-                    <th style={{ padding: '8px', textAlign: 'center' }}>PTS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {standings.map((s, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f9fafb' }}>
-                      <td style={{ padding: '10px 8px', fontWeight: 'bold', color: idx === 0 ? '#2563eb' : '#6b7280' }}>{idx + 1}</td>
-                      <td style={{ padding: '10px 8px', fontWeight: 'bold', color: '#111827' }}>{s.name}</td>
-                      <td style={{ padding: '10px 8px', textAlign: 'center', color: '#4b5563' }}>{s.w}-{s.l}</td>
-                      <td style={{ padding: '10px 8px', textAlign: 'center', color: '#16a34a', fontWeight: '500' }}>{s.diff}</td>
-                      <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{s.pts}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="standings-card">
+              <div className="section-title"><div><p className="eyebrow">CURRENT RANKING</p><h2>Leaderboard</h2></div><span>{standings.length} players</span></div>
+              <div className="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>Played</th><th>Won</th><th>Points</th><th>Diff</th></tr></thead><tbody>
+                {standings.map((player) => <tr key={player.id || player.name}><td className={player.pos <= 3 ? 'rank-top' : ''}>{String(player.pos).padStart(2, '0')}</td><td><div className="table-player"><img src={avatarUrl(player.name)} alt="" /><strong>{player.name}</strong></div></td><td>{player.played}</td><td className="win-cell">{player.w}</td><td>{player.pts}</td><td className={player.diff >= 0 ? 'positive' : 'negative'}>{player.diff > 0 ? `+${player.diff}` : player.diff}</td></tr>)}
+              </tbody></table></div>
             </div>
           )}
 
           {detailTab === 'LOGS' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#111827', marginTop: 0, marginBottom: '12px' }}>Realtime Activity Logs</h3>
-              {matchLogs.length === 0 ? (
-                <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0, textAlign: 'center' }}>Log skor akan tercatat otomatis dari Supabase.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {matchLogs.map((log, i) => (
-                    <div key={i} style={{ backgroundColor: '#f9fafb', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', color: '#374151', border: '1px solid #f3f4f6' }}>
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <div className="logs-card"><div className="section-title"><div><p className="eyebrow">TOURNAMENT HISTORY</p><h2>Activity</h2></div></div>{matchLogs.length === 0 ? <div className="empty-inline">Scores submitted in this session will appear here.</div> : <div className="log-list">{matchLogs.map((log, index) => <div className="log-item" key={`${log}-${index}`}><span className="log-dot" /><span>{log}</span></div>)}</div>}</div>
           )}
-
-        </div>
+        </section>
       )}
 
-      {/* 5. SCREEN 4: USER PROFILE */}
       {currentView === 'PROFILE' && (
-        <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px 16px' }}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb', textAlign: 'center', marginBottom: '16px' }}>
-            <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile.name}`} alt="profile" style={{ width: '72px', height: '72px', borderRadius: '50%', border: '3px solid #2563eb', marginBottom: '12px' }} />
-            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#111827' }}>{userProfile.name}</h2>
-            <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 16px 0' }}>{userProfile.role}</p>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid #f3f4f6', paddingTop: '16px' }}>
-              <div>
-                <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#2563eb' }}>{userProfile.tournamentsCreated}</div>
-                <div style={{ fontSize: '11px', color: '#6b7280' }}>Tournaments</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#2563eb' }}>{userProfile.matchesOrganized}</div>
-                <div style={{ fontSize: '11px', color: '#6b7280' }}>Matches Created</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <section className="page-container narrow-page"><div className="profile-card"><div className="profile-avatar">T</div><p className="eyebrow">PROFILE</p><h1>Thendri</h1><p className="muted">Padel Community Organizer</p><div className="profile-stats"><div><strong>{tournaments.length}</strong><span>Tournaments</span></div><div><strong>—</strong><span>Matches</span></div><div><strong>10</strong><span>Coins</span></div></div></div></section>
       )}
 
-      {/* 6. BOTTOM NAVIGATION */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '1px solid #e5e7eb', padding: '8px 0', display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 50, boxShadow: '0 -2px 10px rgba(0,0,0,0.05)' }}>
-        <button onClick={() => setCurrentView('HOME')} style={{ backgroundColor: 'transparent', border: 'none', color: currentView === 'HOME' ? '#2563eb' : '#6b7280', fontSize: '11px', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-          <span>🏠</span> <span>Home</span>
-        </button>
-        <button onClick={() => setCurrentView('CREATE')} style={{ backgroundColor: '#2563eb', border: 'none', color: '#ffffff', width: '44px', height: '44px', borderRadius: '50%', fontWeight: 'bold', fontSize: '24px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', marginTop: '-16px', boxShadow: '0 4px 12px rgba(37,99,235,0.4)' }}>
-          +
-        </button>
-        <button onClick={() => setCurrentView('PROFILE')} style={{ backgroundColor: 'transparent', border: 'none', color: currentView === 'PROFILE' ? '#2563eb' : '#6b7280', fontSize: '11px', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-          <span>👤</span> <span>Profile</span>
-        </button>
-      </div>
-
-    </div>
+      <nav className="bottom-nav">
+        <button className={currentView === 'HOME' ? 'active' : ''} onClick={goHome}><span>⌂</span><small>Home</small></button>
+        <button className="create-fab" onClick={() => setCurrentView('CREATE')} aria-label="Create tournament">＋</button>
+        <button className={currentView === 'PROFILE' ? 'active' : ''} onClick={() => setCurrentView('PROFILE')}><span>◯</span><small>Profile</small></button>
+      </nav>
+    </main>
   );
 }

@@ -1,17 +1,14 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'PDL-MATCH',
-  description: 'Padel Match Management System',
+  title: 'PDLUP — Padel Matchmaker',
+  description: 'Create balanced padel matches, track scores, and run better tournaments.',
 }
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="id">
-      <head>
-        <script src="https://cdn.tailwindcss.com"></script>
-      </head>
-      <body className="bg-gray-950 text-gray-100 min-h-screen">{children}</body>
+    <html lang="en">
+      <body>{children}</body>
     </html>
   )
 }
