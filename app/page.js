@@ -637,6 +637,70 @@ export default function PDLUPEngineApp() {
     }
   }
 
+  async function handleRegenerateUpcoming() {
+    if (!activeTournament) return;
+    const courts = clamp(Number(manageCourts) || 1, 1, 20);
+    const rounds = clamp(Number(activeTournament.totalRounds) || 1, 1, 30);
+    const completedRounds = [];
+    for (let round = 1; round <= rounds; round += 1) {
+      const roundMatches = roundsMatches[round] || [];
+      const hasFinal = roundMatches.some((match) => match.submitted);
+      const isComplete = roundMatches.length > 0 && roundMatches.every((match) => match.submitted);
+      if (hasFinal && !isComplete) {
+        setErrorMessage(`Round ${round} memiliki skor sebagian. Selesaikan atau periksa round tersebut sebelum regenerasi.`);
+        return;
+      }
+      if (isComplete) completedRounds.push(round);
+    }
+    const lastCompletedRound = completedRounds.length ? Math.max(...completedRounds) : 0;
+    const nextRound = lastCompletedRound + 1;
+    if (nextRound > rounds) {
+      setErrorMessage('Semua round sudah selesai. Tidak ada jadwal berikutnya yang dapat dibuat ulang.');
+      return;
+    }
+    if (managePlayers.length < courts * 4) {
+      setErrorMessage(`Jumlah pemain belum cukup untuk ${courts} court. Tambahkan minimal ${courts * 4} pemain.`);
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.confirm(`Regenerate upcoming rounds ${nextRound}–${rounds}? Ronde final tetap dipertahankan.`)) return;
+
+    setIsManaging(true);
+    try {
+      const fullSchedule = buildSchedule(managePlayers.map((player) => player.name), rounds, courts);
+      const upcomingRows = fullSchedule.matchRows.filter((row) => row.round_number >= nextRound);
+      const upcomingRounds = Object.fromEntries(Object.entries(fullSchedule.rounds).filter(([round]) => Number(round) >= nextRound));
+      if (supabase && !String(activeTournament.id).startsWith('local-')) {
+        const { error: deleteError } = await supabase
+          .from('matches')
+          .delete()
+          .eq('tournament_id', activeTournament.id)
+          .eq('is_completed', false)
+          .gte('round_number', nextRound);
+        if (deleteError) throw deleteError;
+        const { data: insertedMatches, error: insertError } = await supabase
+          .from('matches')
+          .insert(upcomingRows.map((row) => ({ ...row, tournament_id: activeTournament.id })))
+          .select();
+        if (insertError) throw insertError;
+        (insertedMatches || []).forEach((remoteMatch) => {
+          const roundMatches = upcomingRounds[remoteMatch.round_number] || [];
+          const localMatch = roundMatches.find((match) => match.courtName === `Court ${remoteMatch.court_number}`);
+          if (localMatch) localMatch.id = remoteMatch.id;
+        });
+        await fetchMatchesAndStandings(activeTournament.id, activeTournament);
+      } else {
+        const preservedRounds = Object.fromEntries(Object.entries(roundsMatches).filter(([round]) => Number(round) < nextRound));
+        setRoundsMatches({ ...preservedRounds, ...upcomingRounds });
+      }
+      setCurrentRound(nextRound);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Ronde berikutnya gagal dibuat ulang: ${error.message}`);
+    } finally {
+      setIsManaging(false);
+    }
+  }
+
   async function handleSaveCourtCount() {
     if (!activeTournament) return;
     const courts = clamp(Number(manageCourts) || 1, 1, 20);
@@ -875,7 +939,8 @@ export default function PDLUPEngineApp() {
                   <label>Schedule</label>
                   <p>Apply the latest player and court setup to all unfinished rounds.</p>
                   <button type="button" className="regenerate-button" onClick={handleRegenerateSchedule} disabled={isManaging}>↻ Regenerate schedule</button>
-                  <small className="helper-text">Locked after any match has a final score.</small>
+                  <button type="button" className="regenerate-upcoming-button" onClick={handleRegenerateUpcoming} disabled={isManaging}>↻ Regenerate upcoming rounds</button>
+                  <small className="helper-text">Full schedule locks after a final score; upcoming rounds remain available.</small>
                 </div>
               </div>
             </div>
