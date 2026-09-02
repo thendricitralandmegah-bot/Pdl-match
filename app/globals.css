@@ -315,3 +315,54 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .standing-row strong { overflow: hidden; color: var(--navy); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 .standing-row em { color: var(--blue); font-size: .67rem; font-style: normal; font-weight: 800; }
 @media (max-width: 520px) { .detail-body { padding: 1.25rem; } .match-toolbar { align-items: stretch; flex-direction: column; } .generate-match-button { justify-content: center; } .detail-meta { gap: .6rem; } }
+
+/* Match reference layout — PDLUP-inspired split scoreboard, while keeping PD-Match Dadakan Terracotta Court identity. */
+.match-dashboard { display:grid; grid-template-columns:minmax(260px,.86fr) minmax(0,1.35fr); gap:1.25rem; margin-top:1.25rem; }
+.leaderboard-panel,.rounds-panel { min-width:0; border:1px solid var(--line); border-radius:16px; background:#fffdfb; box-shadow:0 10px 24px rgba(33,28,26,.045); }
+.leaderboard-panel { overflow:hidden; }
+.panel-heading,.rounds-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:.8rem; padding:1.05rem 1.1rem .8rem; }
+.panel-eyebrow { color:var(--blue); font-size:.59rem; font-weight:900; letter-spacing:.16em; text-transform:uppercase; }
+.panel-heading h3,.rounds-heading h3 { margin:.25rem 0 0; color:var(--navy); font:800 1.15rem 'Sora',sans-serif; letter-spacing:-.045em; }
+.panel-menu { color:var(--soft-muted); font-size:1.2rem; line-height:1; }
+.leaderboard-head,.leaderboard-row { display:grid; grid-template-columns:22px minmax(0,1.4fr) 24px 52px 38px 34px 32px; align-items:center; gap:.25rem; padding:.6rem 1.1rem; }
+.leaderboard-head { color:var(--soft-muted); border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:#fbf4ee; font-size:.5rem; font-weight:900; letter-spacing:.08em; }
+.leaderboard-row { min-height:43px; border-bottom:1px solid #f0e7e1; color:var(--muted); font-size:.62rem; }
+.leaderboard-row:last-of-type { border-bottom:0; }
+.leaderboard-row strong { overflow:hidden; color:var(--navy); font-size:.72rem; text-overflow:ellipsis; white-space:nowrap; }
+.leaderboard-row b { color:var(--blue); font-size:.74rem; text-align:right; }
+.leaderboard-row i { color:#2a8b76; font-style:normal; }
+.leaderboard-rank { color:var(--soft-muted); font:700 .62rem monospace; }
+.leaderboard-legend { margin:.2rem .8rem .8rem; padding:.75rem .85rem; border-radius:10px; color:var(--muted); background:#f8f1eb; font-size:.58rem; line-height:1.75; }
+.leaderboard-legend strong { color:var(--navy); }
+.leaderboard-empty { padding:1.6rem 1rem; color:var(--muted); font-size:.7rem; text-align:center; }
+.rounds-panel { padding-bottom:1rem; }
+.round-view-button { display:grid; width:34px; height:34px; place-items:center; border:1px solid var(--line); border-radius:9px; color:var(--blue); background:#fff; font-size:1rem; }
+.round-selector { display:flex; gap:.45rem; overflow-x:auto; padding:0 1.1rem .9rem; scrollbar-width:none; }
+.round-selector::-webkit-scrollbar { display:none; }
+.round-selector button { flex:0 0 46px; min-height:38px; border:1px solid var(--line); border-radius:9px; color:var(--navy); background:#fff; font-size:.72rem; font-weight:900; }
+.round-selector button:first-child,.round-selector button:last-child { flex-basis:32px; color:var(--muted); }
+.round-selector button:hover:not(:disabled) { border-color:var(--blue); color:var(--blue); }
+.round-selector button.round-selected { border-color:var(--blue); color:#fff; background:var(--blue); box-shadow:0 6px 14px rgba(206,83,47,.2); }
+.round-selector button:disabled { cursor:not-allowed; opacity:.38; }
+.reference-match-list { display:grid; gap:.7rem; padding:0 1.1rem; }
+.reference-match-card { overflow:hidden; border:1px solid var(--line); border-radius:13px; background:#fff; }
+.reference-scoreboard { position:relative; display:grid; grid-template-columns:1fr 32px 1fr; align-items:center; min-height:124px; padding:1rem 1rem 1.1rem; background:linear-gradient(135deg,#fffaf6 0%,#f8eee8 100%); }
+.reference-score { display:flex; flex-direction:column; gap:.2rem; }
+.reference-score-right { align-items:flex-end; text-align:right; }
+.reference-score strong { color:#151310; font:800 2.15rem/1 'Sora',sans-serif; letter-spacing:-.08em; }
+.reference-score span { display:flex; flex-direction:column; gap:.06rem; }
+.reference-score em { color:var(--navy); font-size:.68rem; font-style:normal; font-weight:700; }
+.reference-score-divider { color:var(--soft-muted); font-size:1.2rem; text-align:center; }
+.reference-court { position:absolute; top:.72rem; right:.8rem; padding:.3rem .48rem; border:1px solid #d8c0b4; border-radius:7px; color:#8d4b36; background:#fff9f5; font-size:.56rem; font-weight:900; }
+.reference-score-edit { display:flex; align-items:flex-end; gap:.55rem; padding:.7rem .85rem; border-top:1px solid var(--line); background:#fff; }
+.reference-score-edit label { display:flex; flex:1; flex-direction:column; gap:.3rem; color:var(--muted); font-size:.55rem; font-weight:800; text-transform:uppercase; }
+.reference-score-edit input { width:100%; height:34px; border:1px solid var(--line); border-radius:8px; color:var(--navy); background:#fbf8f5; font:700 .9rem 'Sora',sans-serif; text-align:center; outline:none; }
+.reference-score-edit input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(206,83,47,.12); }
+.reference-score-edit .save-score-action { margin:0; white-space:nowrap; }
+.rest-players { margin:.85rem 1.1rem 0; padding:.8rem .85rem; border:1px solid var(--line); border-radius:10px; color:var(--muted); background:#fbf5ef; font-size:.66rem; line-height:1.5; }
+.rest-players strong { color:var(--navy); }
+.match-actions { display:flex; flex-wrap:wrap; gap:.55rem; margin:.85rem 1.1rem 0; }
+.match-actions button { min-height:39px; }
+.match-actions .primary-action,.match-actions .secondary-action,.match-actions .generate-match-button { flex:1; justify-content:center; }
+@media (max-width:860px) { .match-dashboard { grid-template-columns:1fr; } .leaderboard-panel { order:2; } .rounds-panel { order:1; } }
+@media (max-width:520px) { .leaderboard-head,.leaderboard-row { grid-template-columns:20px minmax(0,1fr) 22px 48px 34px 30px 28px; padding-left:.8rem; padding-right:.8rem; } .panel-heading,.rounds-heading { padding-left:.8rem; padding-right:.8rem; } .round-selector,.reference-match-list { padding-left:.8rem; padding-right:.8rem; } .rest-players,.match-actions { margin-left:.8rem; margin-right:.8rem; } .reference-scoreboard { min-height:112px; } .reference-score strong { font-size:1.8rem; } .reference-score-edit { flex-wrap:wrap; } .reference-score-edit .save-score-action { flex-basis:100%; } }
