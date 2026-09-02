@@ -104,6 +104,9 @@ function normalizeTournament(row, index = 0) {
     players,
     maxPlayers,
     level: row.level || row.format || row.match_type || 'Intermediate',
+    format: row.match_type || row.format || 'Americano',
+    gender: row.gender || 'Any',
+    visibility: row.visibility || 'Public',
     status: isPast ? 'Past' : 'Active',
     courtCount: Number(row.court_count ?? 1) || 1,
     totalRounds: Number(row.total_rounds ?? 4) || 4,
@@ -138,7 +141,7 @@ function TournamentCard({ tournament, position, total, onOpen }) {
       <div className={`tournament-card-content ${tournament.featured ? 'card-content-light' : 'card-content-dark'}`}>
         <div className="card-topline"><StatusPill status={tournament.status} /><span className="card-index">{String(position).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
         <div className="card-main">
-          <div className="card-level">{tournament.level}</div>
+          <div className="card-level">{tournament.format || 'Americano'} · {tournament.level}</div>
           <h3>{tournament.name}</h3>
           <div className="meta-row"><MetaItem icon={CalendarDays}>{tournament.date}</MetaItem><MetaItem icon={Clock3}>{tournament.time}</MetaItem><MetaItem icon={MapPin}>{tournament.location}</MetaItem></div>
         </div>
@@ -157,9 +160,13 @@ function CreateTournamentModal({ onClose, onCreate }) {
   const [time, setTime] = useState('19:00');
   const [location, setLocation] = useState('Padel Haus Kemang');
   const [level, setLevel] = useState('Intermediate');
+  const [format, setFormat] = useState('Americano');
+  const [gender, setGender] = useState('Any');
+  const [visibility, setVisibility] = useState('Public');
   const [maxPlayers, setMaxPlayers] = useState('16');
   const [courtCount, setCourtCount] = useState('1');
   const [totalRounds, setTotalRounds] = useState('4');
+  const [targetPoints, setTargetPoints] = useState('21');
   const [saving, setSaving] = useState(false);
 
   const submit = async (event) => {
@@ -176,6 +183,10 @@ function CreateTournamentModal({ onClose, onCreate }) {
       maxPlayers: Number(maxPlayers),
       courtCount: Number(courtCount),
       totalRounds: Number(totalRounds),
+      targetPoints: Number(targetPoints),
+      format,
+      gender,
+      visibility,
       level,
       status: 'Active',
       image: imageSet.rally,
@@ -195,8 +206,10 @@ function CreateTournamentModal({ onClose, onCreate }) {
           <label><span>Tournament name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Saturday Rally Club" autoFocus /></label>
           <div className="form-two-col"><label><span>Date</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label><span>Start time</span><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label></div>
           <label><span>Club / location</span><input value={location} onChange={(event) => setLocation(event.target.value)} /></label>
-          <div className="form-two-col"><label><span>Player level</span><select value={level} onChange={(event) => setLevel(event.target.value)}><option>Beginner friendly</option><option>Intermediate</option><option>Advanced</option></select></label><label><span>Max players</span><select value={maxPlayers} onChange={(event) => setMaxPlayers(event.target.value)}><option value="8">8 players</option><option value="12">12 players</option><option value="16">16 players</option><option value="20">20 players</option></select></label></div>
-          <div className="form-two-col"><label><span>Courts</span><select value={courtCount} onChange={(event) => setCourtCount(event.target.value)}>{Array.from({ length: 30 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value} {value === 1 ? 'court' : 'courts'}</option>)}</select></label><label><span>Total rounds</span><select value={totalRounds} onChange={(event) => setTotalRounds(event.target.value)}>{Array.from({ length: 100 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value} {value === 1 ? 'round' : 'rounds'}</option>)}</select></label></div>
+          <div className="form-two-col"><label><span>Player level</span><select value={level} onChange={(event) => setLevel(event.target.value)}><option>Beginner friendly</option><option>Intermediate</option><option>Advanced</option></select></label><label><span>Max players</span><select value={maxPlayers} onChange={(event) => setMaxPlayers(event.target.value)}><option value="4">4 players</option><option value="8">8 players</option><option value="12">12 players</option><option value="16">16 players</option><option value="20">20 players</option><option value="24">24 players</option></select></label></div>
+          <div className="form-two-col"><label><span>Match format</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option>Americano</option><option>Mexicano</option><option>King of the Court</option><option>Friendly</option><option>Custom</option></select></label><label><span>Gender</span><select value={gender} onChange={(event) => setGender(event.target.value)}><option>Any</option><option>Male</option><option>Female</option><option>Mixed</option></select></label></div>
+          <div className="form-two-col"><label><span>Courts</span><select value={courtCount} onChange={(event) => setCourtCount(event.target.value)}>{Array.from({ length: 4 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value} {value === 1 ? 'court' : 'courts'}</option>)}</select></label><label><span>Total rounds</span><select value={totalRounds} onChange={(event) => setTotalRounds(event.target.value)}>{Array.from({ length: 8 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value} {value === 1 ? 'round' : 'rounds'}</option>)}</select></label></div>
+          <div className="form-two-col"><label><span>Points per round</span><select value={targetPoints} onChange={(event) => setTargetPoints(event.target.value)}><option value="11">11 points</option><option value="15">15 points</option><option value="21">21 points</option></select></label><label><span>Visibility</span><select value={visibility} onChange={(event) => setVisibility(event.target.value)}><option>Public</option><option>Private</option><option>Invite only</option></select></label></div>
           <button type="submit" className="primary-action" disabled={saving}><Plus />{saving ? 'Saving tournament…' : 'Create tournament'}</button>
         </form>
       </div>
@@ -327,6 +340,7 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [started, setStarted] = useState(tournament.status === 'Live');
   const isLocal = String(tournament.id).startsWith('starter-') || String(tournament.id).startsWith('local-');
   const canManage = role === 'admin';
   const canScore = role === 'admin' || role === 'scorer';
@@ -359,6 +373,38 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
     load();
     return () => { cancelled = true; };
   }, [tournament.id, isLocal]);
+
+  const joinMatch = async () => {
+    if (players.length >= tournament.maxPlayers) { setError('This match is already full.'); return; }
+    const fallbackName = sessionStorage.getItem('pdl-match-name') || '';
+    const name = window.prompt('Your player name', fallbackName || 'Padel player')?.trim();
+    if (!name) return;
+    sessionStorage.setItem('pdl-match-name', name);
+    setSaving(true);
+    setError('');
+    const player = { id: `local-player-${Date.now()}`, name, level: tournament.level, rating: 1000 };
+    if (!isLocal && supabase) {
+      const { data, error: insertError } = await supabase.from('players').insert({ tournament_id: tournament.id, name }).select().single();
+      if (insertError) setError(insertError.message);
+      else { setPlayers((current) => [...current, data]); setMessage('You joined the match.'); }
+    } else {
+      setPlayers((current) => [...current, player]);
+      setMessage('You joined the match.');
+    }
+    setSaving(false);
+  };
+
+  const startMatch = async () => {
+    if (!canManage) { setError('Only the host can start this match.'); return; }
+    const rosterCount = players.length || tournament.players;
+    if (rosterCount < 4) { setError('At least 4 players are required to start.'); return; }
+    if (!isLocal && supabase) {
+      const { error: updateError } = await supabase.from('tournaments').update({ status: 'Live' }).eq('id', tournament.id);
+      if (updateError) { setError(updateError.message); return; }
+    }
+    setStarted(true);
+    setMessage('Match is live. Generate the first round and start scoring.');
+  };
 
   const addPlayer = async (event) => {
     event.preventDefault();
@@ -470,8 +516,17 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
   const saveScore = async (match) => {
     if (!canScore) { setError('This tournament is read-only for your account.'); return; }
     const draft = scoreDrafts[match.id] || { scoreA: 0, scoreB: 0 };
-    const scoreA = Math.max(0, Number(draft.scoreA) || 0);
-    const scoreB = Math.max(0, Number(draft.scoreB) || 0);
+    const scoreA = Number(draft.scoreA);
+    const scoreB = Number(draft.scoreB);
+    const maxScore = Number(tournament.targetPoints || 21);
+    if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB) || scoreA < 0 || scoreB < 0 || scoreA > maxScore || scoreB > maxScore) {
+      setError(`Score must be between 0 and ${maxScore}.`);
+      return;
+    }
+    if (scoreA === scoreB && scoreA > 0) {
+      setError('A completed padel game cannot finish with a tie.');
+      return;
+    }
     const completed = scoreA > 0 || scoreB > 0;
     setSaving(true);
     setError('');
@@ -491,12 +546,12 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
       <div className="detail-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="detail-cover"><img src={tournament.image} alt="" /><div className="detail-cover-gradient" /><button type="button" onClick={onClose} className="detail-close" aria-label="Close details"><X /></button><div className="detail-status"><StatusPill status={tournament.status} /></div></div>
         <div className="detail-body">
-          <div className="detail-heading"><div><div className="court-kicker">Live tournament</div><h2>{tournament.name}</h2><span className="detail-role">{publicViewer ? 'viewer' : role || 'viewer'}</span></div><div className="detail-actions">{canManage && <button type="button" onClick={onDelete} className="invite-action danger-action"><X /> Delete</button>}<button type="button" onClick={onInvite} className="invite-action"><Users /> Share link</button></div></div>
-          <div className="detail-meta"><MetaItem icon={CalendarDays}>{tournament.date}</MetaItem><MetaItem icon={Clock3}>{tournament.time}</MetaItem><MetaItem icon={MapPin}>{tournament.location}</MetaItem></div>
+          <div className="detail-heading"><div><div className="court-kicker">{started ? 'Live match' : 'Match lobby'}</div><h2>{tournament.name}</h2><span className="detail-role">{publicViewer ? 'viewer' : role || 'viewer'} · {started ? 'LIVE' : 'OPEN'}</span></div><div className="detail-actions">{!started && canManage && <button type="button" onClick={startMatch} className="invite-action start-action"><Zap /> Start match</button>}{!started && !canManage && <button type="button" onClick={joinMatch} className="invite-action join-action" disabled={saving}><Plus /> Join match</button>}{canManage && <button type="button" onClick={onDelete} className="invite-action danger-action"><X /> Delete</button>}<button type="button" onClick={onInvite} className="invite-action"><Users /> Share link</button></div></div>
+          <div className="detail-meta"><MetaItem icon={CalendarDays}>{tournament.date}</MetaItem><MetaItem icon={Clock3}>{tournament.time}</MetaItem><MetaItem icon={MapPin}>{tournament.location}</MetaItem><MetaItem icon={Trophy}>{tournament.format || 'Americano'}</MetaItem><MetaItem icon={Users}>{tournament.maxPlayers} players</MetaItem><MetaItem icon={Gauge}>{tournament.targetPoints || 21} pts</MetaItem></div>
           <div className="detail-tabs"><button type="button" className={tab === 'Overview' ? 'detail-tab-active' : ''} onClick={() => setTab('Overview')}>Overview</button><button type="button" className={tab === 'Matches' ? 'detail-tab-active' : ''} onClick={() => setTab('Matches')}>Live matches <span>{matches.length}</span></button><button type="button" className={tab === 'Standings' ? 'detail-tab-active' : ''} onClick={() => setTab('Standings')}>Leaderboard</button><button type="button" className={tab === 'Activity' ? 'detail-tab-active' : ''} onClick={() => setTab('Activity')}>Activity</button></div>
           {message && <div className="detail-message"><Check /> {message}</div>}
           {error && <div className="detail-error"><X /> {error}</div>}
-          {tab === 'Overview' && <div className="detail-overview"><div className="roster-progress"><div className="progress-top"><span>Roster progress</span><strong>{players.length || tournament.players} / {tournament.maxPlayers}</strong></div><div className="progress-track"><div style={{ width: players.length ? `${Math.min(100, (players.length / tournament.maxPlayers) * 100)}%` : progress }} /></div><p>{tournament.maxPlayers - (players.length || tournament.players) > 0 ? `${tournament.maxPlayers - (players.length || tournament.players)} places still open for this session.` : 'The roster is full. Time to get your rackets ready.'}</p></div>{canManage && <form className="player-add-form" onSubmit={addPlayer}><input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder="Add player name" /><button type="submit" className="secondary-action" disabled={saving}><Plus /> Add</button></form>}<div className="roster-chips">{players.length ? players.map((player) => <span key={player.id}>{player.name}</span>) : <small>No players added yet. Add a roster before generating balanced pairs.</small>}</div></div>}
+          {tab === 'Overview' && <div className="detail-overview"><div className="roster-progress"><div className="progress-top"><span>Roster progress</span><strong>{players.length || tournament.players} / {tournament.maxPlayers}</strong></div><div className="progress-track"><div style={{ width: players.length ? `${Math.min(100, (players.length / tournament.maxPlayers) * 100)}%` : progress }} /></div><p>{tournament.maxPlayers - (players.length || tournament.players) > 0 ? `${tournament.maxPlayers - (players.length || tournament.players)} places still open for this session.` : 'The roster is full. Time to get your rackets ready.'}</p></div>{canManage && <form className="player-add-form" onSubmit={addPlayer}><input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder="Add player name" /><button type="submit" className="secondary-action" disabled={saving}><Plus /> Add</button></form>}<div className="roster-chips">{players.length ? players.map((player) => <span key={player.id}>{player.name}{player.rating ? ` · ${player.rating}` : ''}</span>) : <small>No players added yet. Add a roster before generating balanced pairs.</small>}</div>{!canManage && <button type="button" onClick={joinMatch} className="primary-action join-roster-action" disabled={saving || players.length >= tournament.maxPlayers}>{players.length >= tournament.maxPlayers ? 'Match full' : 'Join this match'}</button>}</div>}
           {tab === 'Matches' && <div className="match-dashboard"><aside className="leaderboard-panel"><div className="panel-heading"><div><span className="panel-eyebrow">Leaderboard</span><h3>By points</h3></div><span className="panel-menu">⋮</span></div><div className="leaderboard-head"><span>PLAYER</span><span>G</span><span>W-L-T</span><span>DIFF</span><span>+M</span><span>P</span></div>{standings.length ? standings.map((player, index) => <div className="leaderboard-row" key={player.id}><span className="leaderboard-rank">{index + 1}.</span><strong>{player.name}</strong><span>{player.games}</span><span><i>{player.wins}</i>-{player.losses}-{player.ties}</span><span>{player.diff > 0 ? '+' : ''}{player.diff}</span><span>+{Math.max(0, player.bonus)}</span><b>{player.points}</b></div>) : <div className="leaderboard-empty">Add players to build the table.</div>}<div className="leaderboard-legend"><strong>W-L-T</strong> Win · Loss · Tie<br /><strong>DIFF</strong> Point difference<br /><strong>+M</strong> Compensation for fewer matches<br /><strong>P</strong> Total points</div></aside><section className="rounds-panel"><div className="rounds-heading"><div><span className="panel-eyebrow">Match rounds</span><h3>Round #{round}</h3></div><button type="button" className="round-view-button" onClick={() => setTab('Matches')} aria-label="View match rounds">▦</button></div><div className="round-selector"><button type="button" onClick={() => setRound((current) => Math.max(1, current - 1))} disabled={round <= 1}>‹</button>{Array.from({ length: Math.min(6, tournament.totalRounds || 4) }, (_, index) => index + 1).map((roundNumber) => <button type="button" key={roundNumber} className={round === roundNumber ? 'round-selected' : ''} onClick={() => setRound(roundNumber)}>{roundNumber}</button>)}<button type="button" onClick={() => setRound((current) => Math.min(tournament.totalRounds || 4, current + 1))} disabled={round >= (tournament.totalRounds || 4)}>›</button></div>{loading ? <div className="match-empty"><span className="spinner" /> Loading matches…</div> : currentRoundMatches.length ? <div className="reference-match-list">{currentRoundMatches.map((match) => { const draft = scoreDrafts[match.id] || { scoreA: match.score_a || 0, scoreB: match.score_b || 0 }; const teamA = getTeamNames(match.team_a); const teamB = getTeamNames(match.team_b); return <article className="reference-match-card" key={match.id}><div className="reference-scoreboard"><div className="reference-score"><strong>{draft.scoreA}</strong><span>{teamA.length ? teamA.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><div className="reference-score-divider">—</div><div className="reference-score reference-score-right"><strong>{draft.scoreB}</strong><span>{teamB.length ? teamB.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><span className="reference-court">Court {match.court_number}</span></div>{canScore && <div className="reference-score-edit"><label>Team A<input aria-label={`Score team A court ${match.court_number}`} inputMode="numeric" value={draft.scoreA} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: event.target.value } }))} /></label><label>Team B<input aria-label={`Score team B court ${match.court_number}`} inputMode="numeric" value={draft.scoreB} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: draft.scoreA, scoreB: event.target.value } }))} /></label><button type="button" className="save-score-action" onClick={() => saveScore(match)} disabled={saving}><Check /> Save</button></div>}</article>; })}</div> : <div className="match-empty"><Sparkles /><h3>No matches generated yet.</h3><p>Add players in Overview, then generate courts for this round.</p><button type="button" className="primary-action" onClick={() => setTab('Overview')}>Build roster first</button></div>}<div className="rest-players"><strong>Rest Players:</strong> {restPlayers.length ? restPlayers.map((player) => player.name).join(', ') : 'None — full rotation'}</div>{canManage && <div className="match-actions"><button type="button" className="primary-action" onClick={finishRound}><span>⚑</span> Finish</button><button type="button" className="secondary-action" onClick={reshuffleRound} disabled={saving || generating}><span>⤨</span> Reshuffle</button><button type="button" className="generate-match-button" onClick={generateMatches} disabled={generating}>{generating ? 'Generating…' : 'Generate matches'} <Sparkles /></button></div>}</section></div>}
           {tab === 'Standings' && <div className="standings-panel"><div className="standings-heading"><div><span className="panel-eyebrow">Current ranking</span><h3>Leaderboard</h3></div><span>{standings.length} players</span></div>{standings.length ? <div className="standings-table">{standings.map((player, index) => <div className="standing-row" key={player.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{player.name}</strong><span>{player.games} played</span><span>{player.wins}W - {player.losses}L - {player.ties}T</span><b>{player.points} pts</b><em>{player.diff > 0 ? '+' : ''}{player.diff} diff</em></div>)}</div> : <div className="match-empty"><Trophy /><h3>Standings appear after the first rally.</h3><p>Generate matches and record scores to build the table.</p></div>}</div>}
           {tab === 'Activity' && <div className="activity-panel"><div className="standings-heading"><div><span className="panel-eyebrow">Tournament history</span><h3>Activity</h3></div><span>{matches.filter((match) => match.is_completed).length} completed</span></div>{matches.filter((match) => match.is_completed).length ? <div className="activity-list">{matches.filter((match) => match.is_completed).map((match) => <div className="activity-row" key={match.id}><span className="activity-dot" /><span>Round {match.round_number} · Court {match.court_number}</span><strong>{match.score_a} – {match.score_b}</strong></div>)}</div> : <div className="match-empty"><Sparkles /><h3>No completed matches yet.</h3><p>Saved scores will appear here.</p></div>}</div>}
@@ -677,10 +732,12 @@ export default function Home() {
       owner_id: session.user.id,
       name: tournament.name,
       format: tournament.level,
-      court_count: Math.min(30, Math.max(1, Number(tournament.courtCount) || 1)),
-      match_type: 'Americano',
-      target_points: 21,
-      total_rounds: Math.min(100, Math.max(1, Number(tournament.totalRounds) || 4)),
+      court_count: Math.min(4, Math.max(1, Number(tournament.courtCount) || 1)),
+      match_type: tournament.format || 'Americano',
+      target_points: Math.min(21, Math.max(1, Number(tournament.targetPoints) || 21)),
+      total_rounds: Math.min(8, Math.max(1, Number(tournament.totalRounds) || 4)),
+      gender: tournament.gender || 'Any',
+      visibility: tournament.visibility || 'Public',
       share_slug: `${slugBase}-${Date.now()}`,
       status: 'Active',
     }).select().single();
