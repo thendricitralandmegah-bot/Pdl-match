@@ -706,7 +706,7 @@ export default function Home() {
       return false;
     }
 
-    const saved = { ...tournament, id: data.id };
+    const saved = { ...tournament, id: data.id, owner_id: session.user.id, share_slug: data.share_slug, host: 'You' };
     setTournaments((current) => [saved, ...current]);
     showNotice('Tournament dan match pertama berhasil dibuat.');
     return true;
