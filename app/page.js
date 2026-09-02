@@ -95,6 +95,8 @@ function normalizeTournament(row, index = 0) {
   const players = Number(row.players_count ?? row.players ?? 0) || 0;
   return {
     id: row.id,
+    owner_id: row.owner_id || null,
+    share_slug: row.share_slug || null,
     name: row.name || 'Untitled tournament',
     date: formatDate(row.scheduled_at || row.created_at),
     time: formatTime(row.scheduled_at || row.created_at),
@@ -313,7 +315,7 @@ function buildRoundPairings(players, round, courtCount, matches = []) {
   return { pairings: best || [], waiting: Math.max(0, roster.length - (best?.length || 0) * 4), cost: bestCost };
 }
 
-function TournamentDetail({ tournament, onClose, onInvite }) {
+function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, onDelete }) {
   const [tab, setTab] = useState('Matches');
   const [round, setRound] = useState(1);
   const [matches, setMatches] = useState([]);
@@ -326,6 +328,9 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const isLocal = String(tournament.id).startsWith('starter-') || String(tournament.id).startsWith('local-');
+  const canManage = role === 'admin';
+  const canScore = role === 'admin' || role === 'scorer';
+  const readOnly = publicViewer || !role;
   const progress = `${Math.min(100, (tournament.players / tournament.maxPlayers) * 100)}%`;
   const currentRoundMatches = matches.filter((match) => Number(match.round_number) === round);
 
@@ -357,6 +362,7 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
 
   const addPlayer = async (event) => {
     event.preventDefault();
+    if (!canManage) { setError('Only tournament admins can manage players.'); return; }
     const name = playerName.trim();
     if (!name) return;
     setSaving(true);
@@ -379,6 +385,7 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
   };
 
   const generateMatches = async () => {
+    if (!canManage) { setError('Only tournament admins can generate matches.'); return; }
     if (generating) return;
     setGenerating(true);
     setError('');
@@ -444,6 +451,7 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
   const activePlayerIds = new Set(currentRoundMatches.flatMap((match) => [...(Array.isArray(match.team_a) ? match.team_a : []), ...(Array.isArray(match.team_b) ? match.team_b : [])].map(getPlayerId)));
   const restPlayers = players.filter((player) => !activePlayerIds.has(player.id));
   const reshuffleRound = async () => {
+    if (!canManage) { setError('Only tournament admins can reshuffle matches.'); return; }
     if (currentRoundMatches.some((match) => match.is_completed)) { setError('Selesaikan atau hapus skor round ini sebelum reshuffle.'); return; }
     if (!isLocal && supabase && currentRoundMatches.length) {
       const { error: deleteError } = await supabase.from('matches').delete().eq('tournament_id', tournament.id).eq('round_number', round);
@@ -460,6 +468,7 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
     if (round < (tournament.totalRounds || 4)) setRound((current) => current + 1);
   };
   const saveScore = async (match) => {
+    if (!canScore) { setError('This tournament is read-only for your account.'); return; }
     const draft = scoreDrafts[match.id] || { scoreA: 0, scoreB: 0 };
     const scoreA = Math.max(0, Number(draft.scoreA) || 0);
     const scoreB = Math.max(0, Number(draft.scoreB) || 0);
@@ -482,13 +491,13 @@ function TournamentDetail({ tournament, onClose, onInvite }) {
       <div className="detail-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="detail-cover"><img src={tournament.image} alt="" /><div className="detail-cover-gradient" /><button type="button" onClick={onClose} className="detail-close" aria-label="Close details"><X /></button><div className="detail-status"><StatusPill status={tournament.status} /></div></div>
         <div className="detail-body">
-          <div className="detail-heading"><div><div className="court-kicker">Tournament details</div><h2>{tournament.name}</h2></div><button type="button" onClick={onInvite} className="invite-action"><Users /> Invite players</button></div>
+          <div className="detail-heading"><div><div className="court-kicker">Tournament details</div><h2>{tournament.name}</h2></div><div className="detail-actions">{canManage && <button type="button" onClick={onDelete} className="invite-action danger-action"><X /> Delete</button>}<button type="button" onClick={onInvite} className="invite-action"><Users /> Share link</button></div></div>
           <div className="detail-meta"><MetaItem icon={CalendarDays}>{tournament.date}</MetaItem><MetaItem icon={Clock3}>{tournament.time}</MetaItem><MetaItem icon={MapPin}>{tournament.location}</MetaItem></div>
           <div className="detail-tabs"><button type="button" className={tab === 'Overview' ? 'detail-tab-active' : ''} onClick={() => setTab('Overview')}>Overview</button><button type="button" className={tab === 'Matches' ? 'detail-tab-active' : ''} onClick={() => setTab('Matches')}>Matches <span>{matches.length}</span></button><button type="button" className={tab === 'Standings' ? 'detail-tab-active' : ''} onClick={() => setTab('Standings')}>Standings</button></div>
           {message && <div className="detail-message"><Check /> {message}</div>}
           {error && <div className="detail-error"><X /> {error}</div>}
-          {tab === 'Overview' && <div className="detail-overview"><div className="roster-progress"><div className="progress-top"><span>Roster progress</span><strong>{players.length || tournament.players} / {tournament.maxPlayers}</strong></div><div className="progress-track"><div style={{ width: players.length ? `${Math.min(100, (players.length / tournament.maxPlayers) * 100)}%` : progress }} /></div><p>{tournament.maxPlayers - (players.length || tournament.players) > 0 ? `${tournament.maxPlayers - (players.length || tournament.players)} places still open for this session.` : 'The roster is full. Time to get your rackets ready.'}</p></div><form className="player-add-form" onSubmit={addPlayer}><input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder="Add player name" /><button type="submit" className="secondary-action" disabled={saving}><Plus /> Add</button></form><div className="roster-chips">{players.length ? players.map((player) => <span key={player.id}>{player.name}</span>) : <small>No players added yet. Add a roster before generating balanced pairs.</small>}</div></div>}
-          {tab === 'Matches' && <div className="match-dashboard"><aside className="leaderboard-panel"><div className="panel-heading"><div><span className="panel-eyebrow">Leaderboard</span><h3>By points</h3></div><span className="panel-menu">⋮</span></div><div className="leaderboard-head"><span>PLAYER</span><span>G</span><span>W-L-T</span><span>DIFF</span><span>+M</span><span>P</span></div>{standings.length ? standings.map((player, index) => <div className="leaderboard-row" key={player.id}><span className="leaderboard-rank">{index + 1}.</span><strong>{player.name}</strong><span>{player.games}</span><span><i>{player.wins}</i>-{player.losses}-{player.ties}</span><span>{player.diff > 0 ? '+' : ''}{player.diff}</span><span>+{Math.max(0, player.bonus)}</span><b>{player.points}</b></div>) : <div className="leaderboard-empty">Add players to build the table.</div>}<div className="leaderboard-legend"><strong>W-L-T</strong> Win · Loss · Tie<br /><strong>DIFF</strong> Point difference<br /><strong>+M</strong> Compensation for fewer matches<br /><strong>P</strong> Total points</div></aside><section className="rounds-panel"><div className="rounds-heading"><div><span className="panel-eyebrow">Match rounds</span><h3>Round #{round}</h3></div><button type="button" className="round-view-button" onClick={() => setTab('Matches')} aria-label="View match rounds">▦</button></div><div className="round-selector"><button type="button" onClick={() => setRound((current) => Math.max(1, current - 1))} disabled={round <= 1}>‹</button>{Array.from({ length: Math.min(6, tournament.totalRounds || 4) }, (_, index) => index + 1).map((roundNumber) => <button type="button" key={roundNumber} className={round === roundNumber ? 'round-selected' : ''} onClick={() => setRound(roundNumber)}>{roundNumber}</button>)}<button type="button" onClick={() => setRound((current) => Math.min(tournament.totalRounds || 4, current + 1))} disabled={round >= (tournament.totalRounds || 4)}>›</button></div>{loading ? <div className="match-empty"><span className="spinner" /> Loading matches…</div> : currentRoundMatches.length ? <div className="reference-match-list">{currentRoundMatches.map((match) => { const draft = scoreDrafts[match.id] || { scoreA: match.score_a || 0, scoreB: match.score_b || 0 }; const teamA = getTeamNames(match.team_a); const teamB = getTeamNames(match.team_b); return <article className="reference-match-card" key={match.id}><div className="reference-scoreboard"><div className="reference-score"><strong>{draft.scoreA}</strong><span>{teamA.length ? teamA.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><div className="reference-score-divider">—</div><div className="reference-score reference-score-right"><strong>{draft.scoreB}</strong><span>{teamB.length ? teamB.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><span className="reference-court">Court {match.court_number}</span></div><div className="reference-score-edit"><label>Team A<input aria-label={`Score team A court ${match.court_number}`} inputMode="numeric" value={draft.scoreA} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: event.target.value } }))} /></label><label>Team B<input aria-label={`Score team B court ${match.court_number}`} inputMode="numeric" value={draft.scoreB} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: draft.scoreA, scoreB: event.target.value } }))} /></label><button type="button" className="save-score-action" onClick={() => saveScore(match)} disabled={saving}><Check /> Save</button></div></article>; })}</div> : <div className="match-empty"><Sparkles /><h3>No matches generated yet.</h3><p>Add players in Overview, then generate courts for this round.</p><button type="button" className="primary-action" onClick={() => setTab('Overview')}>Build roster first</button></div>}<div className="rest-players"><strong>Rest Players:</strong> {restPlayers.length ? restPlayers.map((player) => player.name).join(', ') : 'None — full rotation'}</div><div className="match-actions"><button type="button" className="primary-action" onClick={finishRound}><span>⚑</span> Finish</button><button type="button" className="secondary-action" onClick={reshuffleRound} disabled={saving || generating}><span>⤨</span> Reshuffle</button><button type="button" className="generate-match-button" onClick={generateMatches} disabled={generating}>{generating ? 'Generating…' : 'Generate matches'} <Sparkles /></button></div></section></div>}
+          {tab === 'Overview' && <div className="detail-overview"><div className="roster-progress"><div className="progress-top"><span>Roster progress</span><strong>{players.length || tournament.players} / {tournament.maxPlayers}</strong></div><div className="progress-track"><div style={{ width: players.length ? `${Math.min(100, (players.length / tournament.maxPlayers) * 100)}%` : progress }} /></div><p>{tournament.maxPlayers - (players.length || tournament.players) > 0 ? `${tournament.maxPlayers - (players.length || tournament.players)} places still open for this session.` : 'The roster is full. Time to get your rackets ready.'}</p></div>{canManage && <form className="player-add-form" onSubmit={addPlayer}><input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder="Add player name" /><button type="submit" className="secondary-action" disabled={saving}><Plus /> Add</button></form>}<div className="roster-chips">{players.length ? players.map((player) => <span key={player.id}>{player.name}</span>) : <small>No players added yet. Add a roster before generating balanced pairs.</small>}</div></div>}
+          {tab === 'Matches' && <div className="match-dashboard"><aside className="leaderboard-panel"><div className="panel-heading"><div><span className="panel-eyebrow">Leaderboard</span><h3>By points</h3></div><span className="panel-menu">⋮</span></div><div className="leaderboard-head"><span>PLAYER</span><span>G</span><span>W-L-T</span><span>DIFF</span><span>+M</span><span>P</span></div>{standings.length ? standings.map((player, index) => <div className="leaderboard-row" key={player.id}><span className="leaderboard-rank">{index + 1}.</span><strong>{player.name}</strong><span>{player.games}</span><span><i>{player.wins}</i>-{player.losses}-{player.ties}</span><span>{player.diff > 0 ? '+' : ''}{player.diff}</span><span>+{Math.max(0, player.bonus)}</span><b>{player.points}</b></div>) : <div className="leaderboard-empty">Add players to build the table.</div>}<div className="leaderboard-legend"><strong>W-L-T</strong> Win · Loss · Tie<br /><strong>DIFF</strong> Point difference<br /><strong>+M</strong> Compensation for fewer matches<br /><strong>P</strong> Total points</div></aside><section className="rounds-panel"><div className="rounds-heading"><div><span className="panel-eyebrow">Match rounds</span><h3>Round #{round}</h3></div><button type="button" className="round-view-button" onClick={() => setTab('Matches')} aria-label="View match rounds">▦</button></div><div className="round-selector"><button type="button" onClick={() => setRound((current) => Math.max(1, current - 1))} disabled={round <= 1}>‹</button>{Array.from({ length: Math.min(6, tournament.totalRounds || 4) }, (_, index) => index + 1).map((roundNumber) => <button type="button" key={roundNumber} className={round === roundNumber ? 'round-selected' : ''} onClick={() => setRound(roundNumber)}>{roundNumber}</button>)}<button type="button" onClick={() => setRound((current) => Math.min(tournament.totalRounds || 4, current + 1))} disabled={round >= (tournament.totalRounds || 4)}>›</button></div>{loading ? <div className="match-empty"><span className="spinner" /> Loading matches…</div> : currentRoundMatches.length ? <div className="reference-match-list">{currentRoundMatches.map((match) => { const draft = scoreDrafts[match.id] || { scoreA: match.score_a || 0, scoreB: match.score_b || 0 }; const teamA = getTeamNames(match.team_a); const teamB = getTeamNames(match.team_b); return <article className="reference-match-card" key={match.id}><div className="reference-scoreboard"><div className="reference-score"><strong>{draft.scoreA}</strong><span>{teamA.length ? teamA.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><div className="reference-score-divider">—</div><div className="reference-score reference-score-right"><strong>{draft.scoreB}</strong><span>{teamB.length ? teamB.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><span className="reference-court">Court {match.court_number}</span></div>{canScore && <div className="reference-score-edit"><label>Team A<input aria-label={`Score team A court ${match.court_number}`} inputMode="numeric" value={draft.scoreA} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: event.target.value } }))} /></label><label>Team B<input aria-label={`Score team B court ${match.court_number}`} inputMode="numeric" value={draft.scoreB} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: draft.scoreA, scoreB: event.target.value } }))} /></label><button type="button" className="save-score-action" onClick={() => saveScore(match)} disabled={saving}><Check /> Save</button></div>}</article>; })}</div> : <div className="match-empty"><Sparkles /><h3>No matches generated yet.</h3><p>Add players in Overview, then generate courts for this round.</p><button type="button" className="primary-action" onClick={() => setTab('Overview')}>Build roster first</button></div>}<div className="rest-players"><strong>Rest Players:</strong> {restPlayers.length ? restPlayers.map((player) => player.name).join(', ') : 'None — full rotation'}</div>{canManage && <div className="match-actions"><button type="button" className="primary-action" onClick={finishRound}><span>⚑</span> Finish</button><button type="button" className="secondary-action" onClick={reshuffleRound} disabled={saving || generating}><span>⤨</span> Reshuffle</button><button type="button" className="generate-match-button" onClick={generateMatches} disabled={generating}>{generating ? 'Generating…' : 'Generate matches'} <Sparkles /></button></div>}</section></div>}
           {tab === 'Standings' && <div className="standings-panel">{players.length ? players.map((player, index) => <div className="standing-row" key={player.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{player.name}</strong><em>0 pts</em></div>) : <div className="match-empty"><Trophy /><h3>Standings appear after the first rally.</h3><p>Generate matches and record scores to build the table.</p></div>}</div>}
           <div className="detail-footer"><span>Hosted by <strong>{tournament.host}</strong></span><span>{tournament.rounds}</span></div>
         </div>
@@ -517,6 +526,7 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState('');
   const [notice, setNotice] = useState('');
   const [dataError, setDataError] = useState('');
+  const [tournamentRoles, setTournamentRoles] = useState({});
 
   useEffect(() => {
     if (!supabase) {
@@ -540,20 +550,39 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!session || !supabase) {
-      setTournaments(starterTournaments);
-      return undefined;
-    }
+    if (!supabase) return undefined;
     let cancelled = false;
     const loadTournaments = async () => {
-      const { data, error } = await supabase.from('tournaments').select('*').eq('owner_id', session.user.id).order('created_at', { ascending: false });
-      if (cancelled) return;
+      const sharedSlug = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tournament') : null;
+      let rows = [];
+      let error = null;
+      if (session) {
+        const [{ data: owned, error: ownedError }, { data: memberships, error: memberError }] = await Promise.all([
+          supabase.from('tournaments').select('*').eq('owner_id', session.user.id).order('created_at', { ascending: false }),
+          supabase.from('tournament_members').select('tournament_id,role').eq('user_id', session.user.id)
+        ]);
+        error = ownedError || memberError;
+        const roles = Object.fromEntries((memberships || []).map((member) => [member.tournament_id, member.role]));
+        setTournamentRoles(roles);
+        const ids = [...new Set([...(owned || []).map((row) => row.id), ...(memberships || []).map((member) => member.tournament_id)])];
+        if (!error && ids.length) {
+          const result = await supabase.from('tournaments').select('*').in('id', ids).order('created_at', { ascending: false });
+          rows = result.data || [];
+          error = result.error;
+        }
+      }
       if (error) {
-        setDataError(error.message);
+        if (!cancelled) setDataError(error.message);
         return;
       }
-      setDataError('');
-      setTournaments((data || []).map((row, index) => normalizeTournament(row, index)));
+      if (sharedSlug) {
+        const sharedResult = await supabase.from('tournaments').select('*').eq('share_slug', sharedSlug).maybeSingle();
+        if (!sharedResult.error && sharedResult.data) rows = [...rows, sharedResult.data];
+      }
+      if (!cancelled) {
+        setDataError('');
+        setTournaments((rows || []).filter((row, index, all) => all.findIndex((item) => item.id === row.id) === index).map((row, index) => normalizeTournament(row, index)));
+      }
     };
     loadTournaments();
     return () => { cancelled = true; };
@@ -596,6 +625,35 @@ export default function Home() {
     setSession(null);
     setAuthMessage('');
     showNotice('Signed out safely.');
+  };
+
+  const handleDeleteTournament = async (tournament) => {
+    if (!session || tournament.owner_id !== session.user.id) {
+      showNotice('Only the tournament owner can delete this tournament.');
+      return;
+    }
+    if (!window.confirm(`Delete ${tournament.name} and all of its matches and players? This cannot be undone.`)) return;
+    const { error } = await supabase.from('tournaments').delete().eq('id', tournament.id);
+    if (error) {
+      setDataError(error.message);
+      showNotice(`Delete failed: ${error.message}`);
+      return;
+    }
+    setTournaments((current) => current.filter((item) => item.id !== tournament.id));
+    setSelectedTournament(null);
+    showNotice('Tournament deleted.');
+  };
+
+  const handleShareTournament = async (tournament) => {
+    const slug = tournament.share_slug || tournament.id;
+    const url = `${window.location.origin}/?tournament=${encodeURIComponent(slug)}`;
+    try {
+      if (navigator.share) await navigator.share({ title: tournament.name, url });
+      else if (navigator.clipboard) { await navigator.clipboard.writeText(url); showNotice('Viewer link copied.'); }
+      else window.prompt('Copy this viewer link', url);
+    } catch (error) {
+      if (error?.name !== 'AbortError') showNotice('Share link could not be copied.');
+    }
   };
 
   const handleCreate = async (tournament) => {
@@ -672,7 +730,7 @@ export default function Home() {
 
       <nav className="bottom-nav"><div className="container bottom-nav-inner"><button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="nav-item nav-active"><span><Zap /></span><small>Home</small></button><button type="button" onClick={() => setShowCreate(true)} className="create-fab" aria-label="Create tournament"><Plus /></button><button type="button" onClick={() => document.getElementById('profile')?.scrollIntoView({ behavior: 'smooth' })} className="nav-item"><span><CircleUserRound /></span><small>Profile</small></button></div></nav>
       {showCreate && <CreateTournamentModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
-      {selectedTournament && <TournamentDetail tournament={selectedTournament} onClose={() => setSelectedTournament(null)} onInvite={() => showNotice('Invite link copied to clipboard.')} />}
+      {selectedTournament && <TournamentDetail tournament={selectedTournament} role={session ? (selectedTournament.owner_id === session.user.id ? 'admin' : tournamentRoles[selectedTournament.id] || null) : null} publicViewer={!session} onClose={() => setSelectedTournament(null)} onInvite={() => handleShareTournament(selectedTournament)} onDelete={() => handleDeleteTournament(selectedTournament)} />}
       {notice && <div className="toast-notice"><Check /> {notice}</div>}
     </div>
   );
