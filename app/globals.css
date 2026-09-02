@@ -333,6 +333,35 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .standing-row em { color: var(--blue); font-size: .67rem; font-style: normal; font-weight: 800; }
 @media (max-width: 520px) { .detail-body { padding: 1.25rem; } .match-toolbar { align-items: stretch; flex-direction: column; } .generate-match-button { justify-content: center; } .detail-meta { gap: .6rem; } }
 
+/* Classic PDL-MATCH dashboard detail surface. */
+.detail-modal { max-width: 1080px; max-height: 92vh; border: 1px solid #dbe3ef; border-radius: 18px; background: #f8fbff; }
+.detail-cover { display: none; }
+.detail-body { padding: clamp(1.25rem, 3vw, 2.1rem); }
+.detail-heading h2 { color: #0f172a; font-size: clamp(1.55rem, 3vw, 2rem); }
+.detail-heading .court-kicker, .panel-eyebrow { color: #2563eb; }
+.detail-meta { margin-top: 1.15rem; border-color: #dbe3ef; }
+.detail-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #dbe3ef; background: #eef4fb; }
+.detail-tabs button { color: #64748b; }
+.detail-tabs button.detail-tab-active { color: #fff; background: #2563eb; box-shadow: 0 4px 12px rgba(37,99,235,.2); }
+.match-dashboard { display: block; margin-top: 1.25rem; }
+.leaderboard-panel { display: none; }
+.rounds-panel { border-color: #dbe3ef; border-radius: 14px; box-shadow: 0 8px 24px rgba(15,23,42,.05); }
+.rounds-heading { padding: 1.1rem 1.25rem .8rem; }
+.rounds-heading h3 { color: #0f172a; }
+.reference-match-list { display: grid; gap: .75rem; padding: 0 1.25rem; }
+.reference-match-card { border-color: #dbe3ef; border-radius: 12px; box-shadow: 0 4px 12px rgba(15,23,42,.04); }
+.reference-scoreboard { min-height: 102px; }
+.reference-score strong { color: #0f172a; font-size: 2rem; }
+.reference-score-edit { padding: .85rem 1.15rem; border-top-color: #e2e8f0; background: #f8fbff; }
+.reference-score-edit input { color: #0f172a; border-color: #cbd5e1; background: #fff; font-size: 1.1rem; }
+.reference-score-edit button { color: #fff; background: #2563eb; }
+.rest-players { margin: .85rem 1.25rem; color: #64748b; }
+.match-actions { margin: 0 1.25rem 1.25rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+.standings-panel { margin-top: 1.25rem; padding: 1.25rem; border: 1px solid #dbe3ef; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(15,23,42,.05); }
+.standing-row { grid-template-columns: 34px minmax(130px,1fr) 85px 115px 75px 75px; border-color: #e2e8f0; }
+.activity-panel { border-color: #dbe3ef; }
+@media (max-width: 700px) { .detail-tabs { grid-template-columns: repeat(2, minmax(0,1fr)); } .reference-scoreboard { min-height: 86px; } .reference-score strong { font-size: 1.55rem; } .standing-row { grid-template-columns: 28px minmax(0,1fr) auto; } .standing-row span:nth-of-type(2), .standing-row span:nth-of-type(3), .standing-row em { display: none; } .standing-row b { text-align: right; } }
+
 /* Match reference layout — PDLUP-inspired split scoreboard, while keeping PD-Match Dadakan Terracotta Court identity. */
 .match-dashboard { display:grid; grid-template-columns:minmax(260px,.86fr) minmax(0,1.35fr); gap:1.25rem; margin-top:1.25rem; }
 .leaderboard-panel,.rounds-panel { min-width:0; border:1px solid var(--line); border-radius:16px; background:#fffdfb; box-shadow:0 10px 24px rgba(33,28,26,.045); }
@@ -383,3 +412,37 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .match-actions .primary-action,.match-actions .secondary-action,.match-actions .generate-match-button { flex:1; justify-content:center; }
 @media (max-width:860px) { .match-dashboard { grid-template-columns:1fr; } .leaderboard-panel { order:2; } .rounds-panel { order:1; } }
 @media (max-width:520px) { .leaderboard-head,.leaderboard-row { grid-template-columns:20px minmax(0,1fr) 22px 48px 34px 30px 28px; padding-left:.8rem; padding-right:.8rem; } .panel-heading,.rounds-heading { padding-left:.8rem; padding-right:.8rem; } .round-selector,.reference-match-list { padding-left:.8rem; padding-right:.8rem; } .rest-players,.match-actions { margin-left:.8rem; margin-right:.8rem; } .reference-scoreboard { min-height:112px; } .reference-score strong { font-size:1.8rem; } .reference-score-edit { flex-wrap:wrap; } .reference-score-edit .save-score-action { flex-basis:100%; } }
+
+
+/* Final classic dashboard overrides. */
+.detail-modal { max-width: 1080px; max-height: 92vh; border: 1px solid #dbe3ef; border-radius: 18px; background: #f8fbff; }
+.detail-cover { display: none; }
+.detail-body { padding: clamp(1.25rem, 3vw, 2.1rem); }
+.detail-heading h2 { color: #0f172a; font-size: clamp(1.55rem, 3vw, 2rem); }
+.detail-heading .court-kicker, .panel-eyebrow { color: #2563eb; }
+.detail-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #dbe3ef; background: #eef4fb; }
+.detail-tabs button.detail-tab-active { color: #fff; background: #2563eb; box-shadow: 0 4px 12px rgba(37,99,235,.2); }
+.match-dashboard { display: block; margin-top: 1.25rem; }
+.leaderboard-panel { display: none; }
+.rounds-panel { border-color: #dbe3ef; border-radius: 14px; box-shadow: 0 8px 24px rgba(15,23,42,.05); }
+.rounds-heading { padding: 1.1rem 1.25rem .8rem; }
+.reference-match-list { display: grid; gap: .75rem; padding: 0 1.25rem; }
+.reference-match-card { border-color: #dbe3ef; border-radius: 12px; box-shadow: 0 4px 12px rgba(15,23,42,.04); }
+.reference-scoreboard { min-height: 102px; }
+.reference-score strong { color: #0f172a; font-size: 2rem; }
+.reference-score-edit { padding: .85rem 1.15rem; border-top-color: #e2e8f0; background: #f8fbff; }
+.reference-score-edit input { color: #0f172a; border-color: #cbd5e1; background: #fff; font-size: 1.1rem; }
+.reference-score-edit button { color: #fff; background: #2563eb; }
+.rest-players { margin: .85rem 1.25rem; color: #64748b; }
+.match-actions { margin: 0 1.25rem 1.25rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+.standings-panel { margin-top: 1.25rem; padding: 1.25rem; border: 1px solid #dbe3ef; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(15,23,42,.05); }
+.standing-row { grid-template-columns: 34px minmax(130px,1fr) 85px 115px 75px 75px; border-color: #e2e8f0; }
+.activity-panel { border-color: #dbe3ef; }
+@media (max-width: 700px) {
+  .detail-tabs { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .reference-scoreboard { min-height: 86px; }
+  .reference-score strong { font-size: 1.55rem; }
+  .standing-row { grid-template-columns: 28px minmax(0,1fr) auto; }
+  .standing-row span:nth-of-type(2), .standing-row span:nth-of-type(3), .standing-row em { display: none; }
+  .standing-row b { text-align: right; }
+}
