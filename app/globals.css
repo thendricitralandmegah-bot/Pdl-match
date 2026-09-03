@@ -446,3 +446,37 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .standing-row span:nth-of-type(2), .standing-row span:nth-of-type(3), .standing-row em { display: none; }
   .standing-row b { text-align: right; }
 }
+
+/* Session Manager setup surface. */
+.session-section-label { margin-top: .15rem; color: var(--navy); font-size: .68rem; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.stepper-field { display: flex; width: 100%; height: 48px; align-items: center; justify-content: space-between; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; }
+.stepper-field button { width: 44px; height: 100%; color: var(--blue); background: transparent; font-size: 1.35rem; font-weight: 800; }
+.stepper-field button:hover { background: #f1f5fb; }
+.stepper-field strong { color: var(--navy); font: 800 1rem 'Sora', sans-serif; }
+.player-entry-heading { display: flex; align-items: center; justify-content: space-between; }
+.player-entry-heading strong { color: var(--blue); font-size: .7rem; }
+.player-entry-row { display: flex; gap: .6rem; }
+.player-entry-row input { min-width: 0; flex: 1; }
+.player-entry-row .secondary-action { height: 48px; }
+.session-player-list { display: grid; gap: .45rem; margin-top: -.5rem; }
+.session-player-row { display: flex; align-items: center; gap: .7rem; padding: .7rem .75rem; border: 1px solid #dbe3ef; border-radius: 12px; background: #f8fbff; }
+.session-player-row > span { color: var(--soft-muted); font: 700 .65rem monospace; }
+.session-player-row strong { min-width: 0; flex: 1; overflow: hidden; color: var(--navy); font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.session-player-row button { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 8px; color: #64748b; background: transparent; }
+.session-player-row button:hover { color: #b42318; background: #fff1ef; }
+.session-player-row button svg { width: 14px; height: 14px; }
+.advanced-toggle { display: flex; align-items: center; justify-content: space-between; padding: .8rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--navy); background: transparent; font-size: .75rem; font-weight: 800; text-align: left; }
+.advanced-toggle svg { width: 16px; height: 16px; transition: transform .2s var(--ease-out); }
+.rotate-chevron { transform: rotate(90deg); }
+.advanced-settings { display: grid; gap: .8rem; padding: .9rem; border-radius: 12px; background: #f7f9fc; }
+.session-simulation { display: grid; gap: .35rem; padding: .95rem; border: 1px solid #cfe3ff; border-radius: 14px; color: #1e3a8a; background: #eff6ff; }
+.session-simulation > div { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.session-simulation span { font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.session-simulation strong { font: 800 .78rem 'Sora', sans-serif; text-align: right; }
+.session-simulation small { color: #52709d; font-size: .68rem; }
+.start-action { color: white; background: var(--blue); }
+.start-action:hover { background: #c74d31; }
+.join-action { color: var(--lime-ink); background: var(--lime); }
+.join-action:hover { background: #9ed4c8; }
+.join-roster-action { width: 100%; margin-top: 1rem; }
+@media (max-width: 460px) { .player-entry-row { align-items: stretch; flex-direction: column; } .player-entry-row .secondary-action { width: 100%; } .session-simulation > div { align-items: flex-start; flex-direction: column; } .session-simulation strong { text-align: left; } }
