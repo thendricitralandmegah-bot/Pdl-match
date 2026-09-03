@@ -40,7 +40,7 @@ alter table if exists public.tournaments
 alter table if exists public.tournaments
   drop constraint if exists tournaments_total_rounds_check;
 alter table if exists public.tournaments
-  add constraint tournaments_total_rounds_check check (total_rounds between 1 and 8);
+  add constraint tournaments_total_rounds_check check (total_rounds between 1 and 100);
 
 alter table if exists public.tournaments
   drop constraint if exists tournaments_target_points_check;
