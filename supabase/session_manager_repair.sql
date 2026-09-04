@@ -1,5 +1,6 @@
--- PD-Match Dadakan: Session Manager compatibility migration
--- Run this in the Supabase SQL editor before using the new create-session fields.
+-- PD-Match Dadakan: focused repair for session creation
+-- Run this when the full session_manager_migration.sql stops on a legacy-data constraint.
+-- It intentionally does not add check constraints or update old rows.
 
 alter table if exists public.tournaments
   add column if not exists scheduled_at timestamptz,
@@ -15,40 +16,6 @@ alter table if exists public.tournaments
   add column if not exists share_slug text,
   add column if not exists status text default 'Active';
 
-update public.tournaments
-set
-  match_type = coalesce(match_type, 'Americano'),
-  court_count = coalesce(court_count, 1),
-  total_rounds = coalesce(total_rounds, 4),
-  target_points = coalesce(target_points, 21),
-  scoring_type = coalesce(scoring_type, 'Point scoring'),
-  gender = coalesce(gender, 'Any'),
-  visibility = coalesce(visibility, 'Public'),
-  status = coalesce(status, 'Active')
-where true;
-
-create index if not exists tournaments_scheduled_at_idx on public.tournaments (scheduled_at);
-create index if not exists tournaments_visibility_idx on public.tournaments (visibility);
-create index if not exists tournaments_status_idx on public.tournaments (status);
-
--- Optional constraints. They are intentionally bounded to the current UI values.
-alter table if exists public.tournaments
-  drop constraint if exists tournaments_court_count_check;
-alter table if exists public.tournaments
-  add constraint tournaments_court_count_check check (court_count between 1 and 4) not valid;
-
-alter table if exists public.tournaments
-  drop constraint if exists tournaments_total_rounds_check;
-alter table if exists public.tournaments
-  add constraint tournaments_total_rounds_check check (total_rounds between 1 and 100) not valid;
-
-alter table if exists public.tournaments
-  drop constraint if exists tournaments_target_points_check;
-alter table if exists public.tournaments
-  add constraint tournaments_target_points_check check (target_points between 0 and 32) not valid;
-
--- RLS-safe session creation used by the web app.
--- This keeps tournament_members in sync with the session owner.
 create or replace function public.create_tournament_with_admin(
   tournament_name text,
   tournament_match_type text,
@@ -98,5 +65,7 @@ $$;
 revoke all on function public.create_tournament_with_admin(text, text, integer, integer, integer) from public;
 grant execute on function public.create_tournament_with_admin(text, text, integer, integer, integer) to authenticated;
 
--- Make sure the browser can call the RPC, while the function itself performs
--- the privileged insert under its controlled search path.
+select routine_name
+from information_schema.routines
+where routine_schema = 'public'
+  and routine_name = 'create_tournament_with_admin';
