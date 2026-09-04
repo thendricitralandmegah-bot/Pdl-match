@@ -239,18 +239,36 @@ function CreateTournamentModal({ onClose, onCreate }) {
   );
 }
 
-function getTeamNames(team) {
-  return Array.isArray(team) ? team.map((player) => typeof player === 'string' ? player : player?.name).filter(Boolean) : [];
+function resolveRosterPlayer(player, roster = []) {
+  if (player && typeof player === 'object') {
+    const byId = roster.find((candidate) => String(candidate.id) === String(player.id));
+    if (byId) return byId;
+    return player.id || player.name ? { ...player, name: player.name || String(player.id) } : null;
+  }
+  const byId = roster.find((candidate) => String(candidate.id) === String(player));
+  return byId || (player ? { id: player, name: String(player) } : null);
 }
 
-function getPlayerId(player) {
-  return typeof player === 'string' ? player : player?.id;
+function getTeamPlayers(team, roster = []) {
+  return Array.isArray(team) ? team.map((player) => resolveRosterPlayer(player, roster)).filter(Boolean) : [];
+}
+
+function getTeamNames(team, roster = []) {
+  return getTeamPlayers(team, roster).map((player) => player.name).filter(Boolean);
+}
+
+function getPlayerId(player, roster = []) {
+  return resolveRosterPlayer(player, roster)?.id;
 }
 
 function isPlaceholderMatch(match) {
-  const teamA = Array.isArray(match?.team_a) ? match.team_a.filter(Boolean) : [];
-  const teamB = Array.isArray(match?.team_b) ? match.team_b.filter(Boolean) : [];
-  return teamA.length === 0 && teamB.length === 0;
+  return getTeamPlayers(match?.team_a).length === 0 && getTeamPlayers(match?.team_b).length === 0;
+}
+
+function isMalformedMatch(match) {
+  const teamA = getTeamPlayers(match?.team_a);
+  const teamB = getTeamPlayers(match?.team_b);
+  return teamA.length < 2 || teamB.length < 2;
 }
 
 function pairKey(first, second) {
@@ -261,7 +279,7 @@ function buildPairingHistory(matches, roster) {
   const history = { partners: new Map(), opponents: new Map(), played: new Map(), byes: new Map(), courts: new Map() };
   const roundPlayers = new Map();
   const increment = (map, key, amount = 1) => map.set(key, (map.get(key) || 0) + amount);
-  matches.forEach((match) => {
+    matches.filter((match) => !isMalformedMatch(match)).forEach((match) => {
     const teamA = (Array.isArray(match.team_a) ? match.team_a : []).map(getPlayerId).filter(Boolean);
     const teamB = (Array.isArray(match.team_b) ? match.team_b : []).map(getPlayerId).filter(Boolean);
     const allPlayers = [...teamA, ...teamB];
@@ -374,7 +392,7 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
   const canScore = role === 'admin' || role === 'scorer';
   const readOnly = publicViewer || !role;
   const progress = `${Math.min(100, (tournament.players / tournament.maxPlayers) * 100)}%`;
-  const currentRoundMatches = matches.filter((match) => !isPlaceholderMatch(match) && Number(match.round_number) === round);
+  const currentRoundMatches = matches.filter((match) => !isMalformedMatch(match) && Number(match.round_number) === round);
 
   useEffect(() => {
     let cancelled = false;
@@ -466,16 +484,16 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
     setError('');
     setMessage('');
     const courtCount = Math.max(1, Number(tournament.courtCount || 1));
-    const placeholderMatches = matches.filter((match) => isPlaceholderMatch(match) && Number(match.round_number) === round);
-    if (!isLocal && supabase && placeholderMatches.length) {
-      const { error: cleanupError } = await supabase.from('matches').delete().in('id', placeholderMatches.map((match) => match.id));
+    const invalidMatches = matches.filter((match) => isMalformedMatch(match) && Number(match.round_number) === round);
+    if (!isLocal && supabase && invalidMatches.length) {
+      const { error: cleanupError } = await supabase.from('matches').delete().in('id', invalidMatches.map((match) => match.id));
       if (cleanupError) {
-        setError(`Placeholder round gagal dibersihkan: ${cleanupError.message}`);
+        setError(`Pairing lama yang tidak lengkap gagal dibersihkan: ${cleanupError.message}`);
         setGenerating(false);
         return;
       }
     }
-    if (placeholderMatches.length) setMatches((current) => current.filter((match) => !placeholderMatches.some((placeholder) => placeholder.id === match.id)));
+    if (invalidMatches.length) setMatches((current) => current.filter((match) => !invalidMatches.some((invalid) => invalid.id === match.id)));
     const existingCourts = new Set(currentRoundMatches.map((match) => Number(match.court_number)));
     const openCourts = Array.from({ length: courtCount }, (_, index) => index + 1).filter((court) => !existingCourts.has(court));
     if (!openCourts.length) {
@@ -591,7 +609,7 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
           {message && <div className="detail-message"><Check /> {message}</div>}
           {error && <div className="detail-error"><X /> {error}</div>}
           {tab === 'Overview' && <div className="detail-overview"><div className="roster-progress"><div className="progress-top"><span>Roster progress</span><strong>{players.length || tournament.players} / {tournament.maxPlayers}</strong></div><div className="progress-track"><div style={{ width: players.length ? `${Math.min(100, (players.length / tournament.maxPlayers) * 100)}%` : progress }} /></div><p>{tournament.maxPlayers - (players.length || tournament.players) > 0 ? `${tournament.maxPlayers - (players.length || tournament.players)} places still open for this session.` : 'The roster is full. Time to get your rackets ready.'}</p></div>{canManage && <form className="player-add-form" onSubmit={addPlayer}><input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder="Add player name" /><button type="submit" className="secondary-action" disabled={saving}><Plus /> Add</button></form>}<div className="roster-chips">{players.length ? players.map((player) => <span key={player.id}>{player.name}{player.rating ? ` · ${player.rating}` : ''}</span>) : <small>No players added yet. Add a roster before generating balanced pairs.</small>}</div>{!canManage && <button type="button" onClick={joinMatch} className="primary-action join-roster-action" disabled={saving || players.length >= tournament.maxPlayers}>{players.length >= tournament.maxPlayers ? 'Match full' : 'Join this match'}</button>}</div>}
-          {tab === 'Matches' && <div className="match-dashboard"><aside className="leaderboard-panel"><div className="panel-heading"><div><span className="panel-eyebrow">Leaderboard</span><h3>By points</h3></div><span className="panel-menu">⋮</span></div><div className="leaderboard-head"><span>PLAYER</span><span>G</span><span>W-L-T</span><span>DIFF</span><span>+M</span><span>P</span></div>{standings.length ? standings.map((player, index) => <div className="leaderboard-row" key={player.id}><span className="leaderboard-rank">{index + 1}.</span><strong>{player.name}</strong><span>{player.games}</span><span><i>{player.wins}</i>-{player.losses}-{player.ties}</span><span>{player.diff > 0 ? '+' : ''}{player.diff}</span><span>+{Math.max(0, player.bonus)}</span><b>{player.points}</b></div>) : <div className="leaderboard-empty">Add players to build the table.</div>}<div className="leaderboard-legend"><strong>W-L-T</strong> Win · Loss · Tie<br /><strong>DIFF</strong> Point difference<br /><strong>+M</strong> Compensation for fewer matches<br /><strong>P</strong> Total points</div></aside><section className="rounds-panel"><div className="rounds-heading"><div><span className="panel-eyebrow">Session rounds</span><h3>Round #{round}</h3></div><button type="button" className="round-view-button" onClick={() => setTab('Matches')} aria-label="View match rounds">▦</button></div><div className="round-selector"><button type="button" onClick={() => setRound((current) => Math.max(1, current - 1))} disabled={round <= 1}>‹</button>{Array.from({ length: Math.min(6, tournament.totalRounds || 4) }, (_, index) => index + 1).map((roundNumber) => <button type="button" key={roundNumber} className={round === roundNumber ? 'round-selected' : ''} onClick={() => setRound(roundNumber)}>{roundNumber}</button>)}<button type="button" onClick={() => setRound((current) => Math.min(tournament.totalRounds || 4, current + 1))} disabled={round >= (tournament.totalRounds || 4)}>›</button></div>{loading ? <div className="match-empty"><span className="spinner" /> Loading matches…</div> : currentRoundMatches.length ? <div className="reference-match-list">{currentRoundMatches.map((match) => { const draft = scoreDrafts[match.id] || { scoreA: match.score_a || 0, scoreB: match.score_b || 0 }; const teamA = getTeamNames(match.team_a); const teamB = getTeamNames(match.team_b); return <article className="reference-match-card" key={match.id}><div className="reference-scoreboard"><div className="reference-score"><strong>{draft.scoreA}</strong><span>{teamA.length ? teamA.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><div className="reference-score-divider">—</div><div className="reference-score reference-score-right"><strong>{draft.scoreB}</strong><span>{teamB.length ? teamB.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><span className="reference-court">Court {match.court_number}</span></div>{canScore && <div className="reference-score-edit"><label>Team A<input aria-label={`Score team A court ${match.court_number}`} inputMode="numeric" value={draft.scoreA} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: event.target.value } }))} /></label><label>Team B<input aria-label={`Score team B court ${match.court_number}`} inputMode="numeric" value={draft.scoreB} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: draft.scoreA, scoreB: event.target.value } }))} /></label><button type="button" className="save-score-action" onClick={() => saveScore(match)} disabled={saving}><Check /> Save</button></div>}</article>; })}</div> : <div className="match-empty"><Sparkles /><h3>No matches generated yet.</h3><p>Add players in Overview, then generate courts for this round.</p><button type="button" className="primary-action" onClick={() => setTab('Overview')}>Build roster first</button></div>}<div className="rest-players"><strong>Rest Players:</strong> {restPlayers.length ? restPlayers.map((player) => player.name).join(', ') : 'None — full rotation'}</div>{canManage && <div className="match-actions"><button type="button" className="primary-action" onClick={finishRound}><span>⚑</span> Finish</button><button type="button" className="secondary-action" onClick={reshuffleRound} disabled={saving || generating}><span>⤨</span> Reshuffle</button><button type="button" className="generate-match-button" onClick={generateMatches} disabled={generating}>{generating ? 'Generating…' : 'Generate matches'} <Sparkles /></button></div>}</section></div>}
+          {tab === 'Matches' && <div className="match-dashboard"><aside className="leaderboard-panel"><div className="panel-heading"><div><span className="panel-eyebrow">Leaderboard</span><h3>By points</h3></div><span className="panel-menu">⋮</span></div><div className="leaderboard-head"><span>PLAYER</span><span>G</span><span>W-L-T</span><span>DIFF</span><span>+M</span><span>P</span></div>{standings.length ? standings.map((player, index) => <div className="leaderboard-row" key={player.id}><span className="leaderboard-rank">{index + 1}.</span><strong>{player.name}</strong><span>{player.games}</span><span><i>{player.wins}</i>-{player.losses}-{player.ties}</span><span>{player.diff > 0 ? '+' : ''}{player.diff}</span><span>+{Math.max(0, player.bonus)}</span><b>{player.points}</b></div>) : <div className="leaderboard-empty">Add players to build the table.</div>}<div className="leaderboard-legend"><strong>W-L-T</strong> Win · Loss · Tie<br /><strong>DIFF</strong> Point difference<br /><strong>+M</strong> Compensation for fewer matches<br /><strong>P</strong> Total points</div></aside><section className="rounds-panel"><div className="rounds-heading"><div><span className="panel-eyebrow">Session rounds</span><h3>Round #{round}</h3></div><button type="button" className="round-view-button" onClick={() => setTab('Matches')} aria-label="View match rounds">▦</button></div><div className="round-selector"><button type="button" onClick={() => setRound((current) => Math.max(1, current - 1))} disabled={round <= 1}>‹</button>{Array.from({ length: Math.min(6, tournament.totalRounds || 4) }, (_, index) => index + 1).map((roundNumber) => <button type="button" key={roundNumber} className={round === roundNumber ? 'round-selected' : ''} onClick={() => setRound(roundNumber)}>{roundNumber}</button>)}<button type="button" onClick={() => setRound((current) => Math.min(tournament.totalRounds || 4, current + 1))} disabled={round >= (tournament.totalRounds || 4)}>›</button></div>{loading ? <div className="match-empty"><span className="spinner" /> Loading matches…</div> : currentRoundMatches.length ? <div className="reference-match-list">{currentRoundMatches.map((match) => { const draft = scoreDrafts[match.id] || { scoreA: match.score_a || 0, scoreB: match.score_b || 0 };           const teamA = getTeamNames(match.team_a, players); const teamB = getTeamNames(match.team_b, players); return <article className="reference-match-card" key={match.id}><div className="reference-scoreboard"><div className="reference-score"><strong>{draft.scoreA}</strong><span>{teamA.length ? teamA.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><div className="reference-score-divider">—</div><div className="reference-score reference-score-right"><strong>{draft.scoreB}</strong><span>{teamB.length ? teamB.map((name) => <em key={name}>{name}</em>) : <em>Waiting for players</em>}</span></div><span className="reference-court">Court {match.court_number}</span></div>{canScore && <div className="reference-score-edit"><label>Team A<input aria-label={`Score team A court ${match.court_number}`} inputMode="numeric" value={draft.scoreA} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: event.target.value } }))} /></label><label>Team B<input aria-label={`Score team B court ${match.court_number}`} inputMode="numeric" value={draft.scoreB} onChange={(event) => setScoreDrafts((current) => ({ ...current, [match.id]: { ...draft, scoreA: draft.scoreA, scoreB: event.target.value } }))} /></label><button type="button" className="save-score-action" onClick={() => saveScore(match)} disabled={saving}><Check /> Save</button></div>}</article>; })}</div> : <div className="match-empty"><Sparkles /><h3>No matches generated yet.</h3><p>Add players in Overview, then generate courts for this round.</p><button type="button" className="primary-action" onClick={() => setTab('Overview')}>Build roster first</button></div>}<div className="rest-players"><strong>Rest Players:</strong> {restPlayers.length ? restPlayers.map((player) => player.name).join(', ') : 'None — full rotation'}</div>{canManage && <div className="match-actions"><button type="button" className="primary-action" onClick={finishRound}><span>⚑</span> Finish</button><button type="button" className="secondary-action" onClick={reshuffleRound} disabled={saving || generating}><span>⤨</span> Reshuffle</button><button type="button" className="generate-match-button" onClick={generateMatches} disabled={generating}>{generating ? 'Generating…' : 'Generate matches'} <Sparkles /></button></div>}</section></div>}
           {tab === 'Standings' && <div className="standings-panel"><div className="standings-heading"><div><span className="panel-eyebrow">Current ranking</span><h3>Leaderboard</h3></div><span>{standings.length} players</span></div>{standings.length ? <div className="standings-table">{standings.map((player, index) => <div className="standing-row" key={player.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{player.name}</strong><span>{player.games} played</span><span>{player.wins}W - {player.losses}L - {player.ties}T</span><b>{player.points} pts</b><em>{player.diff > 0 ? '+' : ''}{player.diff} diff</em></div>)}</div> : <div className="match-empty"><Trophy /><h3>Standings appear after the first rally.</h3><p>Generate matches and record scores to build the table.</p></div>}</div>}
           {tab === 'Activity' && <div className="activity-panel"><div className="standings-heading"><div><span className="panel-eyebrow">Tournament history</span><h3>Activity</h3></div><span>{matches.filter((match) => match.is_completed).length} completed</span></div>{matches.filter((match) => match.is_completed).length ? <div className="activity-list">{matches.filter((match) => match.is_completed).map((match) => <div className="activity-row" key={match.id}><span className="activity-dot" /><span>Round {match.round_number} · Court {match.court_number}</span><strong>{match.score_a} – {match.score_b}</strong></div>)}</div> : <div className="match-empty"><Sparkles /><h3>No completed matches yet.</h3><p>Saved scores will appear here.</p></div>}</div>}
           <div className="detail-footer"><span>Hosted by <strong>{tournament.host}</strong></span><span>{tournament.rounds}</span></div>
