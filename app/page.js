@@ -784,44 +784,80 @@ export default function Home() {
     }
 
     setDataError('');
-    const slugBase = tournament.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'tournament';
-    const { data, error } = await supabase.from('tournaments').insert({
-      owner_id: session.user.id,
-      name: tournament.name,
-      format: tournament.level,
-      court_count: Math.min(4, Math.max(1, Number(tournament.courtCount) || 1)),
-      match_type: tournament.format || 'Americano',
-      scheduled_at: tournament.scheduledAt,
-      location: tournament.location,
-      target_points: Math.min(32, Math.max(0, Number(tournament.targetPoints) || 21)),
-      scoring_type: tournament.scoringType || 'Point scoring',
-      total_rounds: Math.min(8, Math.max(1, Number(tournament.totalRounds) || 4)),
-      gender: tournament.gender || 'Any',
-      visibility: tournament.visibility || 'Public',
-      share_slug: `${slugBase}-${Date.now()}`,
-      status: 'Active',
-    }).select().single();
-    if (error) {
-      setDataError(error.message);
-      showNotice(`Session gagal dibuat: ${error.message}`);
-      return false;
-    }
-
-    let savedPlayers = [];
-    if (Array.isArray(tournament.playerNames) && tournament.playerNames.length) {
-      const { data: playerData, error: playerError } = await supabase.from('players').insert(tournament.playerNames.map((name) => ({ tournament_id: data.id, name }))).select();
-      if (playerError) {
-        setDataError(`Session tersimpan, tetapi roster belum tersimpan: ${playerError.message}`);
-        showNotice('Session tersimpan, tetapi roster perlu ditambahkan dari dashboard.');
+    try {
+      const slugBase = tournament.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'tournament';
+      const courtCountValue = Math.min(4, Math.max(1, Number(tournament.courtCount) || 1));
+      const targetPointsValue = Math.min(32, Math.max(0, Number(tournament.targetPoints) || 21));
+      const totalRoundsValue = Math.min(8, Math.max(1, Number(tournament.totalRounds) || 4));
+      const shareSlug = `${slugBase}-${Date.now()}`;
+      let data;
+      let error;
+      const rpcResult = await supabase.rpc('create_tournament_with_admin', {
+        tournament_name: tournament.name,
+        tournament_match_type: tournament.format || 'Americano',
+        tournament_target_points: targetPointsValue,
+        tournament_court_count: courtCountValue,
+        tournament_total_rounds: totalRoundsValue,
+      });
+      const rpcData = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+      if (!rpcResult.error && rpcData?.id) {
+        const enrichedResult = await supabase.from('tournaments').update({
+          format: tournament.level,
+          scheduled_at: tournament.scheduledAt,
+          location: tournament.location,
+          scoring_type: tournament.scoringType || 'Point scoring',
+          gender: tournament.gender || 'Any',
+          visibility: tournament.visibility || 'Public',
+          share_slug: shareSlug,
+          status: 'Active',
+        }).eq('id', rpcData.id).select().single();
+        data = enrichedResult.data || rpcData;
+        error = enrichedResult.error;
+      } else if (rpcResult.error && (/function .*create_tournament_with_admin.*does not exist/i.test(rpcResult.error.message || '') || rpcResult.error.code === '42883')) {
+        const directResult = await supabase.from('tournaments').insert({
+          owner_id: session.user.id,
+          name: tournament.name,
+          format: tournament.level,
+          court_count: courtCountValue,
+          match_type: tournament.format || 'Americano',
+          scheduled_at: tournament.scheduledAt,
+          location: tournament.location,
+          target_points: targetPointsValue,
+          scoring_type: tournament.scoringType || 'Point scoring',
+          total_rounds: totalRoundsValue,
+          gender: tournament.gender || 'Any',
+          visibility: tournament.visibility || 'Public',
+          share_slug: shareSlug,
+          status: 'Active',
+        }).select().single();
+        data = directResult.data;
+        error = directResult.error;
+      } else {
+        data = rpcData;
+        error = rpcResult.error;
+      }
+      if (error || !data?.id) {
+        const errorMessage = error?.message || 'Supabase tidak mengembalikan session yang dibuat.';
+        setDataError(errorMessage);
+        showNotice(`Session gagal dibuat: ${errorMessage}`);
         return false;
       }
-      savedPlayers = playerData || [];
-    }
 
-    const courtCount = Math.max(1, Number(tournament.courtCount) || 1);
-    const { pairings, waiting } = buildRoundPairings(savedPlayers, 1, courtCount, []);
-    if (pairings.length) {
-      const firstRoundRows = pairings.map((pairing, index) => ({
+      let savedPlayers = [];
+      if (Array.isArray(tournament.playerNames) && tournament.playerNames.length) {
+        const { data: playerData, error: playerError } = await supabase.from('players').insert(tournament.playerNames.map((name) => ({ tournament_id: data.id, name }))).select();
+        if (playerError) {
+          setDataError(`Session tersimpan, tetapi roster belum tersimpan: ${playerError.message}`);
+          showNotice('Session tersimpan, tetapi roster perlu ditambahkan dari dashboard.');
+          return false;
+        }
+        savedPlayers = Array.isArray(playerData) ? playerData : [];
+      }
+
+      const courtCount = Math.max(1, Number(tournament.courtCount) || 1);
+      const { pairings, waiting } = buildRoundPairings(savedPlayers, 1, courtCount, []);
+      if (pairings.length) {
+        const firstRoundRows = pairings.map((pairing, index) => ({
         tournament_id: data.id,
         round_number: 1,
         court_number: index + 1,
@@ -832,18 +868,25 @@ export default function Home() {
         score_b: 0,
         is_completed: false,
       }));
-      const { error: matchError } = await supabase.from('matches').insert(firstRoundRows);
-      if (matchError) {
-        setDataError(`Session dan roster tersimpan, tetapi pairing round pertama gagal dibuat: ${matchError.message}`);
-        showNotice('Session tersimpan, tetapi pairing round pertama perlu dibuat dari dashboard.');
-        return false;
+        const { error: matchError } = await supabase.from('matches').insert(firstRoundRows);
+        if (matchError) {
+          setDataError(`Session dan roster tersimpan, tetapi pairing round pertama gagal dibuat: ${matchError.message}`);
+          showNotice('Session tersimpan, tetapi pairing round pertama perlu dibuat dari dashboard.');
+          return false;
+        }
       }
-    }
 
-    const saved = { ...tournament, id: data.id, owner_id: session.user.id, share_slug: data.share_slug, host: 'You', players: savedPlayers.length || tournament.players };
-    setTournaments((current) => [saved, ...current]);
-    showNotice(pairings.length ? `Session dibuat dengan ${pairings.length} pairing di Round 1${waiting ? ` · ${waiting} pemain menunggu` : ''}.` : 'Session dibuat. Tambahkan minimal 4 pemain untuk generate pairing.');
-    return true;
+      const saved = { ...tournament, id: data.id, owner_id: session.user.id, share_slug: data.share_slug, host: 'You', players: savedPlayers.length || tournament.players };
+      setTournaments((current) => [saved, ...current]);
+      showNotice(pairings.length ? `Session dibuat dengan ${pairings.length} pairing di Round 1${waiting ? ` · ${waiting} pemain menunggu` : ''}.` : 'Session dibuat. Tambahkan minimal 4 pemain untuk generate pairing.');
+      return true;
+    } catch (createError) {
+      console.error('Create session failed', createError);
+      const message = createError?.message || 'Terjadi kesalahan saat membuat session.';
+      setDataError(message);
+      showNotice(`Session gagal dibuat: ${message}`);
+      return false;
+    }
   };
 
   return (
