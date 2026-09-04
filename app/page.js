@@ -247,6 +247,12 @@ function getPlayerId(player) {
   return typeof player === 'string' ? player : player?.id;
 }
 
+function isPlaceholderMatch(match) {
+  const teamA = Array.isArray(match?.team_a) ? match.team_a.filter(Boolean) : [];
+  const teamB = Array.isArray(match?.team_b) ? match.team_b.filter(Boolean) : [];
+  return teamA.length === 0 && teamB.length === 0;
+}
+
 function pairKey(first, second) {
   return [first, second].sort().join('::');
 }
@@ -368,7 +374,7 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
   const canScore = role === 'admin' || role === 'scorer';
   const readOnly = publicViewer || !role;
   const progress = `${Math.min(100, (tournament.players / tournament.maxPlayers) * 100)}%`;
-  const currentRoundMatches = matches.filter((match) => Number(match.round_number) === round);
+  const currentRoundMatches = matches.filter((match) => !isPlaceholderMatch(match) && Number(match.round_number) === round);
 
   useEffect(() => {
     let cancelled = false;
@@ -384,11 +390,12 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
       ]);
       if (cancelled) return;
       if (matchResult.error || playerResult.error) {
-        setError(matchResult.error?.message || playerResult.error?.message || 'Could not load match data.');
+          setError(matchResult.error?.message || playerResult.error?.message || 'Could not load session data.');
       } else {
-        setMatches(matchResult.data || []);
+        const loadedMatches = matchResult.data || [];
+        setMatches(loadedMatches);
         setPlayers(playerResult.data || []);
-        setScoreDrafts(Object.fromEntries((matchResult.data || []).map((match) => [match.id, { scoreA: match.score_a || 0, scoreB: match.score_b || 0 }])));
+        setScoreDrafts(Object.fromEntries(loadedMatches.filter((match) => !isPlaceholderMatch(match)).map((match) => [match.id, { scoreA: match.score_a || 0, scoreB: match.score_b || 0 }])));
       }
       setLoading(false);
     };
@@ -459,6 +466,16 @@ function TournamentDetail({ tournament, role, publicViewer, onClose, onInvite, o
     setError('');
     setMessage('');
     const courtCount = Math.max(1, Number(tournament.courtCount || 1));
+    const placeholderMatches = matches.filter((match) => isPlaceholderMatch(match) && Number(match.round_number) === round);
+    if (!isLocal && supabase && placeholderMatches.length) {
+      const { error: cleanupError } = await supabase.from('matches').delete().in('id', placeholderMatches.map((match) => match.id));
+      if (cleanupError) {
+        setError(`Placeholder round gagal dibersihkan: ${cleanupError.message}`);
+        setGenerating(false);
+        return;
+      }
+    }
+    if (placeholderMatches.length) setMatches((current) => current.filter((match) => !placeholderMatches.some((placeholder) => placeholder.id === match.id)));
     const existingCourts = new Set(currentRoundMatches.map((match) => Number(match.court_number)));
     const openCourts = Array.from({ length: courtCount }, (_, index) => index + 1).filter((court) => !existingCourts.has(court));
     if (!openCourts.length) {
@@ -772,33 +789,42 @@ export default function Home() {
       return false;
     }
 
-    const { error: matchError } = await supabase.from('matches').insert({
-      tournament_id: data.id,
-      round_number: 1,
-      court_number: 1,
-      badge: 'OPEN',
-      team_a: [],
-      team_b: [],
-      score_a: 0,
-      score_b: 0,
-      is_completed: false,
-    });
-    if (matchError) {
-      setDataError(`Session tersimpan, tetapi round pertama gagal dibuat: ${matchError.message}`);
-      showNotice('Session tersimpan, tetapi round belum dibuat.');
-      return false;
-    }
-
+    let savedPlayers = [];
     if (Array.isArray(tournament.playerNames) && tournament.playerNames.length) {
-      const { error: playerError } = await supabase.from('players').insert(tournament.playerNames.map((name) => ({ tournament_id: data.id, name })));
+      const { data: playerData, error: playerError } = await supabase.from('players').insert(tournament.playerNames.map((name) => ({ tournament_id: data.id, name }))).select();
       if (playerError) {
         setDataError(`Session tersimpan, tetapi roster belum tersimpan: ${playerError.message}`);
         showNotice('Session tersimpan, tetapi roster perlu ditambahkan dari dashboard.');
+        return false;
+      }
+      savedPlayers = playerData || [];
+    }
+
+    const courtCount = Math.max(1, Number(tournament.courtCount) || 1);
+    const { pairings, waiting } = buildRoundPairings(savedPlayers, 1, courtCount, []);
+    if (pairings.length) {
+      const firstRoundRows = pairings.map((pairing, index) => ({
+        tournament_id: data.id,
+        round_number: 1,
+        court_number: index + 1,
+        badge: 'OPEN',
+        team_a: pairing.teamA.map((player) => ({ id: player.id, name: player.name })),
+        team_b: pairing.teamB.map((player) => ({ id: player.id, name: player.name })),
+        score_a: 0,
+        score_b: 0,
+        is_completed: false,
+      }));
+      const { error: matchError } = await supabase.from('matches').insert(firstRoundRows);
+      if (matchError) {
+        setDataError(`Session dan roster tersimpan, tetapi pairing round pertama gagal dibuat: ${matchError.message}`);
+        showNotice('Session tersimpan, tetapi pairing round pertama perlu dibuat dari dashboard.');
+        return false;
       }
     }
-    const saved = { ...tournament, id: data.id, owner_id: session.user.id, share_slug: data.share_slug, host: 'You' };
+
+    const saved = { ...tournament, id: data.id, owner_id: session.user.id, share_slug: data.share_slug, host: 'You', players: savedPlayers.length || tournament.players };
     setTournaments((current) => [saved, ...current]);
-    showNotice('Session dan round pertama berhasil dibuat.');
+    showNotice(pairings.length ? `Session dibuat dengan ${pairings.length} pairing di Round 1${waiting ? ` · ${waiting} pemain menunggu` : ''}.` : 'Session dibuat. Tambahkan minimal 4 pemain untuk generate pairing.');
     return true;
   };
 
