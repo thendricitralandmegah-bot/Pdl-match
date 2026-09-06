@@ -240,12 +240,13 @@ function CreateTournamentModal({ onClose, onCreate }) {
 }
 
 function resolveRosterPlayer(player, roster = []) {
+  const safeRoster = Array.isArray(roster) ? roster : [];
   if (player && typeof player === 'object') {
-    const byId = roster.find((candidate) => String(candidate.id) === String(player.id));
+    const byId = safeRoster.find((candidate) => String(candidate?.id) === String(player.id));
     if (byId) return byId;
     return player.id || player.name ? { ...player, name: player.name || String(player.id) } : null;
   }
-  const byId = roster.find((candidate) => String(candidate.id) === String(player));
+  const byId = safeRoster.find((candidate) => String(candidate?.id) === String(player));
   return byId || (player ? { id: player, name: String(player) } : null);
 }
 
